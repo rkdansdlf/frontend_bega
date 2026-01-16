@@ -55,7 +55,7 @@ export default function Login() {
             value={formData.email}
             onChange={(e) => handleFieldChange('email', e.target.value)}
             onBlur={() => handleFieldBlur('email')}
-            className={`bg-gray-50 border-gray-200 focus:ring-2 focus:ring-[#2d5f4f] ${fieldErrors.email ? 'border-red-500' : ''}`}
+            className={`bg-gray-50 dark:bg-gray-50 border-gray-200 text-gray-900 dark:text-gray-900 focus:ring-2 focus:ring-[#2d5f4f] ${fieldErrors.email ? 'border-red-500' : ''}`}
             placeholder="이메일을 입력하세요"
             disabled={isLoading}
           />
@@ -77,7 +77,7 @@ export default function Login() {
               value={formData.password}
               onChange={(e) => handleFieldChange('password', e.target.value)}
               onBlur={() => handleFieldBlur('password')}
-              className={`bg-gray-50 border-gray-200 focus:ring-2 focus:ring-[#2d5f4f] pr-10 ${fieldErrors.password ? 'border-red-500' : ''}`}
+              className={`bg-gray-50 dark:bg-gray-50 border-gray-200 text-gray-900 dark:text-gray-900 focus:ring-2 focus:ring-[#2d5f4f] pr-10 ${fieldErrors.password ? 'border-red-500' : ''}`}
               placeholder="비밀번호를 입력하세요"
               disabled={isLoading}
             />
@@ -96,14 +96,14 @@ export default function Login() {
           
          <div className="flex items-center justify-between">
             <label className="flex items-center gap-2 text-sm text-gray-600">
-              <input 
-                type="checkbox" 
-                className="rounded border-gray-300" 
-                checked={rememberEmail} 
-                onChange={(e) => handleRememberEmailChange(e.target.checked)} 
-                disabled={isLoading} 
+              <input
+                type="checkbox"
+                className="rounded border-gray-300"
+                checked={rememberEmail}
+                onChange={(e) => handleRememberEmailChange(e.target.checked)}
+                disabled={isLoading}
               />
-              이메일 저장 
+              이메일 저장
             </label>
             <button
               type="button"
@@ -139,7 +139,7 @@ export default function Login() {
         {/* 회원가입 링크 */}
         <p className="text-center text-sm text-gray-600">
           계정이 없으신가요?{' '}
-          <button 
+          <button
             type="button"
             onClick={() => navigate('/signup')}
             className="hover:underline disabled:opacity-50"

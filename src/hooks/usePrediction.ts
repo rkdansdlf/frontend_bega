@@ -4,19 +4,19 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuthStore } from '../store/authStore';
 import { Game, DateGames, VoteStatus, ConfirmDialogData, VoteTeam, PredictionTab } from '../types/prediction';
-import { 
-  fetchPastGames, 
-  fetchMatchesByDate, 
+import {
+  fetchMatchesByDate,
+  fetchMatchesByRange,
   fetchAllUserVotes as fetchAllUserVotesAPI,
   fetchVoteStatus,
   submitVote,
-  cancelVote 
+  cancelVote
 } from '../api/prediction';
-import { 
-  groupByDate, 
-  getTodayString, 
+import {
+  groupByDate,
+  getTodayString,
   getTomorrowString,
-  getFullTeamName 
+  getFullTeamName
 } from '../utils/prediction';
 
 export const usePrediction = () => {
@@ -27,15 +27,15 @@ export const usePrediction = () => {
   // 탭 관리
   const [activeTab, setActiveTab] = useState<PredictionTab>('match');
   const [selectedGame, setSelectedGame] = useState(0);
-  
+
   // 날짜별 경기 데이터
   const [allDatesData, setAllDatesData] = useState<DateGames[]>([]);
   const [currentDateIndex, setCurrentDateIndex] = useState(0);
   const [loading, setLoading] = useState(true);
-  
+
   // 투표 현황
   const [votes, setVotes] = useState<{ [key: string]: VoteStatus }>({});
-  
+
   // 사용자 투표
   const [userVote, setUserVote] = useState<{ [key: string]: VoteTeam | null }>({});
 
@@ -44,7 +44,7 @@ export const usePrediction = () => {
   const [confirmDialogData, setConfirmDialogData] = useState<ConfirmDialogData>({
     title: '',
     description: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
   });
   const [showLoginRequiredDialog, setShowLoginRequiredDialog] = useState(false);
 
@@ -79,23 +79,28 @@ export const usePrediction = () => {
     try {
       setLoading(true);
 
-      const pastData = await fetchPastGames();
       const today = getTodayString();
       const tomorrow = getTomorrowString();
-      
+
+      // 과거 3개월치 데이터 가져오기 (2025 시즌 포함)
+      const threeMonthsAgo = new Date();
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      const startDate = threeMonthsAgo.toISOString().split('T')[0];
+
+      const pastData = await fetchMatchesByRange(startDate, today);
       const todayData = await fetchMatchesByDate(today);
 
       const groupedPastGames = groupByDate(pastData);
       const todayGroup: DateGames = { date: today, games: [] };
-      
+
       const allDates = [...groupedPastGames, todayGroup];
       if (todayData.length > 0) {
         const tomorrowGroup: DateGames = { date: tomorrow, games: todayData };
         allDates.push(tomorrowGroup);
       }
-      
+
       setAllDatesData(allDates);
-      
+
       const todayIndex = allDates.findIndex(d => d.date === today);
       setCurrentDateIndex(todayIndex !== -1 ? todayIndex : 0);
 
@@ -106,7 +111,8 @@ export const usePrediction = () => {
       }
 
     } catch (error) {
-      console.error('경기 데이터를 불러오는데 실패했습니다:', error);
+      // Global handler catches this for major fetch errors (games list).
+      // We just need to stop loading.
     } finally {
       setLoading(false);
     }
@@ -132,13 +138,13 @@ export const usePrediction = () => {
 
     // 이미 투표했는데 다른 팀 클릭 시 확인
     if (userVote[gameId] && userVote[gameId] !== team) {
-      const currentTeamName = userVote[gameId] === 'home' 
-        ? getFullTeamName(game.homeTeam) 
+      const currentTeamName = userVote[gameId] === 'home'
+        ? getFullTeamName(game.homeTeam)
         : getFullTeamName(game.awayTeam);
-      const newTeamName = team === 'home' 
-        ? getFullTeamName(game.homeTeam) 
+      const newTeamName = team === 'home'
+        ? getFullTeamName(game.homeTeam)
         : getFullTeamName(game.awayTeam);
-      
+
       setConfirmDialogData({
         title: '투표 변경',
         description: `현재 ${currentTeamName} 승리로 투표하셨습니다.\n${newTeamName}(으)로 변경하시겠습니까?`,
@@ -175,9 +181,9 @@ export const usePrediction = () => {
       await submitVote(gameId, team);
       setUserVote(prev => ({ ...prev, [gameId]: team }));
       loadVoteStatus(gameId);
-      
-      const teamName = team === 'home' 
-        ? getFullTeamName(game.homeTeam) 
+
+      const teamName = team === 'home'
+        ? getFullTeamName(game.homeTeam)
         : getFullTeamName(game.awayTeam);
       toast.success(`${teamName} 승리 예측이 저장되었습니다! ⚾`);
     } catch (error: any) {
@@ -235,14 +241,14 @@ export const usePrediction = () => {
     userVote,
     isAuthLoading,
     isLoggedIn,
-    
+
     // Dialog
     showConfirmDialog,
     setShowConfirmDialog,
     confirmDialogData,
     showLoginRequiredDialog,
     setShowLoginRequiredDialog,
-    
+
     // Handlers
     handleVote,
     goToPreviousDate,
