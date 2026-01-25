@@ -39,7 +39,9 @@
             "clsx": "*",
             "cmdk": "^1.1.1",
             "embla-carousel-react": "^8.6.0",
-            "framer-motion": "^12.26.2",
+            "emoji-picker-react": "^4.16.1",
+    "framer-motion": "^12.26.2",
+    "styled-components": "^6.1.19",
             "input-otp": "^1.4.2",
             "js-cookie": "^3.0.5",
             "lucide-react": "^0.487.0",
@@ -55,7 +57,9 @@
             "react-resizable-panels": "^2.1.7",
             "react-rnd": "^10.5.2",
             "react-router-dom": "^7.9.6",
+            "react-textarea-autosize": "^8.5.9",
             "recharts": "^2.15.2",
+            "rehype-raw": "^7.0.0",
             "remark-gfm": "^4.0.0",
             "sockjs-client": "^1.6.1",
             "sonner": "^2.0.3",
@@ -64,19 +68,27 @@
             "zustand": "*"
       },
       "devDependencies": {
+            "@types/cypress": "^0.1.6",
             "@types/js-cookie": "^3.0.6",
             "@types/node": "^20.10.0",
-            "@types/react": "^19.2.6",
-            "@types/react-dom": "^19.2.3",
+    "@types/react": "^19.2.6",
+    "@types/react-dom": "^19.2.3",
+    "@types/styled-components": "^5.1.34",
             "@vitejs/plugin-react": "^4.3.1",
             "autoprefixer": "^10.4.23",
+            "cypress": "^15.9.0",
             "postcss": "^8.5.6",
+            "start-server-and-test": "^2.1.3",
             "tailwindcss": "^3.4.19",
+            "typescript": "^5.9.3",
             "vite": "^6.4.1"
       },
       "scripts": {
             "dev": "npx vite",
             "build": "npx vite build",
-            "preview": "npx vite preview"
+            "preview": "npx vite preview",
+            "cy:open": "cypress open",
+            "cy:run": "cypress run",
+            "test:e2e": "start-server-and-test dev http://localhost:5173 cy:run"
       }
 }

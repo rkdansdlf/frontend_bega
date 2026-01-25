@@ -1,3 +1,4 @@
+import { formatTimeAgo } from '../utils/time';
 import api from './axios';
 
 // 팀 색상 매핑
@@ -35,52 +36,112 @@ export function getTeamNameById(teamId: string | null): string {
     return teamNames[teamId] || teamId;
 }
 
-// 시간 변환 유틸리티
-function formatTimeAgo(createdAt: string): string {
-    if (!createdAt) return '';
-    const date = new Date(createdAt);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
 
-    if (diffMins < 1) return '방금 전';
-    if (diffMins < 60) return `${diffMins}분 전`;
-
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}시간 전`;
-
-    const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays}일 전`;
-}
 
 // API 인터페이스 정의 (프론트엔드 사용용)
+export interface CheerAuthor {
+    id: number;
+    handle: string;
+    profileImageUrl?: string;
+    teamId?: string;
+}
+
 export interface CheerPost {
     id: number;
-    team: string;
-    teamColor: string;
-    title: string;
-    content?: string;
-    author: string;
-    authorId: number; // Added authorId
+    teamId: string;
+    team: string; // compatibility
+    postType: 'NORMAL' | 'NOTICE' | 'CHEER' | 'FREE';
+    author: string; // Changed from CheerAuthor to string (display name)
+    authorId: number;
+    authorHandle: string;
     authorProfileImageUrl?: string;
     authorTeamId?: string;
-    timeAgo: string;
-    comments: number;
-    likes: number;
+    content: string;
+    timeAgo: string; // Added for compatibility
+    teamColor: string; // Added for compatibility
+    likeCount: number;
+    commentCount: number;
+    repostCount: number;
     views: number;
     isHot: boolean;
-    likedByUser?: boolean;
-    isBookmarked?: boolean; // 추가됨
-    images?: string[];
-    imageUploadFailed?: boolean;
-    isOwner?: boolean;
-    postType: string;
+    createdAt: string;
+    updatedAt: string;
+    liked: boolean;
+    likedByUser: boolean; // compatibility
+    bookmarked: boolean;
+    isBookmarked: boolean; // compatibility
+    isOwner: boolean;
+    repostedByMe: boolean;
+    imageUrls?: string[];
+    images?: string[]; // compatibility
+    comments: number; // Changed from any[] to number (count)
+    likes: number; // Changed from number | undefined to number
+    imageUploadFailed?: boolean; // Added
+    // 리포스트 관련 필드
+    repostOfId?: number;           // 원본 게시글 ID (리포스트인 경우)
+    repostType?: RepostType;       // 'SIMPLE' | 'QUOTE' | undefined(원본)
+    originalPost?: EmbeddedPost;   // 원본 게시글 임베드 정보
+    originalDeleted?: boolean;     // 원본 삭제 여부
+}
+
+// ... (PageResponse, PostSummaryRes, etc. - skipping unrelated parts if possible, but replace_file_content needs contiguous block)
+
+export interface PageResponse<T> {
+    content: T[];
+    last: boolean;
+    totalPages: number;
+    totalElements: number;
+    size: number;
+    number: number;
+}
+
+export type PostSummaryRes = CheerPost;
+
+export interface FetchPostsParams {
+    teamId?: string | null;
+    postType?: 'NORMAL' | 'NOTICE' | null;
+    page?: number;
+    size?: number;
+    sort?: string;
+}
+
+export interface SearchPostsParams {
+    q: string;
+    teamId?: string | null;
+    page?: number;
+    size?: number;
+    sort?: string;
 }
 
 export interface LikeToggleResponse {
     liked: boolean;
     likes: number;
 }
+
+export interface RepostToggleResponse {
+    reposted: boolean;
+    count: number;
+}
+
+// 임베드된 원본 게시글 정보 (리포스트에서 표시용)
+export interface EmbeddedPost {
+    id: number;
+    teamId: string;
+    teamColor: string;
+    content: string;  // 100자 미리보기
+    author: string;
+    authorHandle: string;
+    authorProfileImageUrl?: string;
+    createdAt: string;
+    imageUrls: string[];
+    deleted: boolean;  // 삭제 여부
+    likeCount?: number;
+    commentCount?: number;
+    repostCount?: number;
+}
+
+// 리포스트 타입
+export type RepostType = 'SIMPLE' | 'QUOTE';
 
 export interface Comment {
     id: number;
@@ -91,6 +152,7 @@ export interface Comment {
     likeCount?: number;
     likedByMe?: boolean;
     authorProfileImageUrl?: string;
+    authorHandle?: string;
     replies?: Comment[];
     authorEmail?: string; // Added for ownership check
 }
@@ -98,49 +160,123 @@ export interface Comment {
 // === API 함수들 ===
 
 // 게시글 목록 조회
-export async function fetchPosts(teamId?: string, page = 0, size = 20, postType?: string, sort = 'createdAt,desc') {
-    const params = new URLSearchParams({
+export const fetchPosts = async (params: FetchPostsParams = {}): Promise<PageResponse<CheerPost>> => {
+    const { teamId, postType, page = 0, size = 20, sort } = params;
+    const searchParams = new URLSearchParams({
         page: page.toString(),
         size: size.toString(),
-        sort: sort
     });
 
-    if (teamId && teamId !== 'all') {
-        params.append('teamId', teamId);
-    }
-    if (postType) {
-        params.append('postType', postType);
-    }
+    if (teamId && teamId !== 'all') searchParams.append('teamId', teamId);
+    if (postType) searchParams.append('postType', postType);
+    if (sort) searchParams.append('sort', sort);
 
-    const response = await api.get(`/cheer/posts?${params.toString()}`);
-    const data = response.data;
+    const response = await api.get(`/cheer/posts?${searchParams.toString()}`);
+    return transformPostPage(response.data);
+};
 
-    // 데이터 변환
-    const content = data.content.map((post: any) => ({
+// 인기 게시글 목록 조회
+export const fetchHotPosts = async (params: FetchPostsParams = {}): Promise<PageResponse<CheerPost>> => {
+    const { page = 0, size = 20 } = params;
+    const response = await api.get(`/cheer/posts/hot?page=${page}&size=${size}`);
+    return transformPostPage(response.data);
+};
+
+// 팔로우한 유저들의 게시글 조회 (팔로우 피드)
+export const fetchFollowingPosts = async (params: FetchPostsParams = {}): Promise<PageResponse<CheerPost>> => {
+    const { page = 0, size = 20 } = params;
+    const response = await api.get(`/cheer/posts/following?page=${page}&size=${size}`);
+    return transformPostPage(response.data);
+};
+
+export const searchPosts = async (params: SearchPostsParams): Promise<PageResponse<CheerPost>> => {
+    const { q, teamId, page = 0, size = 20, sort } = params;
+    const searchParams = new URLSearchParams({
+        q,
+        page: page.toString(),
+        size: size.toString(),
+    });
+
+    if (teamId && teamId !== 'all') searchParams.append('teamId', teamId);
+    if (sort) searchParams.append('sort', sort);
+
+    const response = await api.get(`/cheer/posts/search?${searchParams.toString()}`);
+    return transformPostPage(response.data);
+};
+
+// 특정 사용자 게시글 조회 (핸들 기준)
+export async function fetchUserPostsByHandle(handle: string, page = 0, size = 20): Promise<PageResponse<CheerPost>> {
+    const response = await api.get(`/cheer/user/${handle}/posts?page=${page}&size=${size}`);
+    return transformPostPage(response.data);
+}
+
+// 데이터 변환 헬퍼
+function transformPost(post: any): CheerPost {
+    return {
         id: post.id,
-        team: post.teamId,
+        teamId: post.teamId,
+        team: post.teamId, // compatibility
         teamColor: teamColors[post.teamId] || '#2d5f4f',
-        title: post.title,
-        author: post.author,
-        authorId: post.authorId, // Map from response
+        content: post.content || '',
+        author: post.author, // Assuming post.author is string from backend PostSummaryRes
+        authorId: post.authorId,
+        authorHandle: post.authorHandle || '',
         authorProfileImageUrl: post.authorProfileImageUrl,
         authorTeamId: post.authorTeamId,
         timeAgo: formatTimeAgo(post.createdAt),
-        comments: post.comments,
-        likes: post.likes,
+        comments: post.comments || 0, // Now number
+        likes: post.likes || 0,
+        likeCount: post.likeCount || post.likes || 0,
+        commentCount: post.commentCount || post.comments || 0,
+        repostCount: post.repostCount || 0,
         views: post.views,
-        isHot: post.isHot,
-        postType: post.postType,
-        images: post.imageUrls,
-        isOwner: post.isOwner,
+        liked: post.liked ?? false,
+        likedByUser: post.liked ?? false,
+        bookmarked: post.bookmarkedByMe ?? post.isBookmarked ?? false,
         isBookmarked: post.bookmarkedByMe ?? post.isBookmarked ?? false,
-    }));
+        images: post.imageUrls || [],
+        imageUrls: post.imageUrls || [],
+        isOwner: post.isOwner ?? false,
+        repostedByMe: post.repostedByMe ?? false,
+        isHot: post.isHot ?? false,
+        postType: post.postType,
+        createdAt: post.createdAt,
+        updatedAt: post.updatedAt,
+        imageUploadFailed: post.imageUploadFailed,
+        // 리포스트 관련 필드
+        repostOfId: post.repostOfId,
+        repostType: post.repostType,
+        originalPost: post.originalPost ? transformEmbeddedPost(post.originalPost) : undefined,
+        originalDeleted: post.originalDeleted ?? false
+    };
+}
 
+// 임베드된 원본 게시글 변환
+function transformEmbeddedPost(post: any): EmbeddedPost {
     return {
-        content,
+        id: post.id,
+        teamId: post.teamId,
+        teamColor: post.teamColor || teamColors[post.teamId] || '#2d5f4f',
+        content: post.content || '',
+        author: post.author,
+        authorHandle: post.authorHandle,
+        authorProfileImageUrl: post.authorProfileImageUrl,
+        createdAt: post.createdAt,
+        imageUrls: post.imageUrls || [],
+        deleted: post.deleted ?? false,
+        likeCount: post.likeCount ?? 0,
+        commentCount: post.commentCount ?? 0,
+        repostCount: post.repostCount ?? 0
+    };
+}
+
+function transformPostPage(data: any) {
+    return {
+        content: data.content.map(transformPost),
         last: data.last,
         totalPages: data.totalPages,
         totalElements: data.totalElements,
+        size: data.size,
         number: data.number
     };
 }
@@ -148,35 +284,12 @@ export async function fetchPosts(teamId?: string, page = 0, size = 20, postType?
 // 게시글 상세 조회
 export async function fetchPostDetail(id: number): Promise<CheerPost> {
     const response = await api.get(`/cheer/posts/${id}`);
-    const post = response.data;
-
-    return {
-        id: post.id,
-        team: post.teamId,
-        teamColor: teamColors[post.teamId] || '#2d5f4f',
-        title: post.title,
-        content: post.content,
-        author: post.author,
-        authorId: post.authorId, // Map from response
-        authorProfileImageUrl: post.authorProfileImageUrl,
-        authorTeamId: post.authorTeamId,
-        timeAgo: formatTimeAgo(post.createdAt),
-        comments: post.comments,
-        likes: post.likes,
-        views: post.views,
-        likedByUser: post.likedByMe,
-        isBookmarked: post.bookmarkedByMe ?? post.isBookmarked ?? false,
-        images: post.imageUrls,
-        isOwner: post.isOwner,
-        isHot: false, // 상세에서는 굳이 필요없을 수 있음
-        postType: post.postType
-    };
+    return transformPost(response.data);
 }
 
 // 게시글 작성
 export async function createPost(data: {
     teamId: string;
-    title: string;
     content: string;
     postType?: string;
 }) {
@@ -184,16 +297,15 @@ export async function createPost(data: {
         ...data,
         postType: data.postType || 'CHEER'
     });
-    return response.data;
+    return transformPost(response.data);
 }
 
 // 게시글 수정
 export async function updatePost(id: number, data: {
-    title: string;
     content: string;
 }) {
     const response = await api.put(`/cheer/posts/${id}`, data);
-    return response.data;
+    return transformPost(response.data);
 }
 
 // 게시글 삭제
@@ -210,7 +322,26 @@ export async function toggleLike(postId: number): Promise<LikeToggleResponse> {
 // 댓글 목록 조회
 export async function fetchComments(postId: number, page = 0, size = 20) {
     const response = await api.get(`/cheer/posts/${postId}/comments?page=${page}&size=${size}`);
-    return response.data; // CommentRes 구조에 따라 변환 필요할 수 있음
+    const data = response.data;
+
+    const transformComment = (c: any): any => ({
+        id: c.id,
+        author: c.author,
+        authorEmail: c.authorEmail,
+        authorTeamId: c.authorTeamId,
+        authorProfileImageUrl: c.authorProfileImageUrl,
+        authorHandle: c.authorHandle,
+        content: c.content,
+        timeAgo: formatTimeAgo(c.createdAt),
+        likeCount: c.likeCount,
+        likedByMe: c.likedByMe,
+        replies: c.replies ? c.replies.map(transformComment) : []
+    });
+
+    return {
+        ...data,
+        content: data.content.map(transformComment)
+    };
 }
 
 // 댓글 작성
@@ -234,6 +365,24 @@ export async function toggleCommentLike(commentId: number): Promise<LikeToggleRe
 export async function toggleBookmark(postId: number) {
     const response = await api.post(`/cheer/posts/${postId}/bookmark`);
     return response.data;
+}
+
+// 재게시 (Repost) 토글 - 단순 리포스트
+export async function toggleRepost(postId: number): Promise<RepostToggleResponse> {
+    const response = await api.post(`/cheer/posts/${postId}/repost`);
+    return response.data;
+}
+
+// 리포스트 취소 - 단순 리포스트 삭제
+export async function cancelRepost(repostId: number): Promise<RepostToggleResponse> {
+    const response = await api.delete(`/cheer/posts/${repostId}/repost`);
+    return response.data;
+}
+
+// 인용 리포스트 생성
+export async function createQuoteRepost(postId: number, content: string): Promise<CheerPost> {
+    const response = await api.post(`/cheer/posts/${postId}/quote`, { content });
+    return transformPost(response.data);
 }
 
 export enum ReportReason {
@@ -267,7 +416,8 @@ export async function uploadPostImages(postId: number, files: File[]): Promise<s
         headers: {
             'Content-Type': 'multipart/form-data',
         },
-    });
+        skipGlobalErrorHandler: true, // 직접 에러 처리 (글 작성 실패 메시지 커스텀)
+    } as any);
     return response.data; // 업로드된 이미지 URL 목록 반환
 }
 
@@ -304,5 +454,15 @@ export interface PostImageDto {
 // 게시글 이미지 목록 조회 (ID 포함)
 export async function fetchPostImages(postId: number): Promise<PostImageDto[]> {
     const response = await api.get(`/cheer/posts/${postId}/images`);
+    return response.data;
+}
+// Cheer Battle Status
+export interface CheerBattleStatus {
+    stats: Record<string, number>;
+    myVote: string | null;
+}
+
+export async function getCheerBattleStatus(gameId: string): Promise<CheerBattleStatus> {
+    const response = await api.get(`/cheer/battle/${gameId}/status`);
     return response.data;
 }

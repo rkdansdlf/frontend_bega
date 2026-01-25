@@ -1,4 +1,6 @@
 // components/cheer/CommentItem.tsx
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Heart, CornerDownRight, Send, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
@@ -11,6 +13,7 @@ interface CommentItemProps {
   canInteract: boolean; // For replies
   canLike: boolean; // For likes
   repliesEnabled?: boolean;
+  repliesComingSoon?: boolean; // Show 'Coming Soon' badge on reply button
   activeReplyId: number | null;
   replyDraft: string;
   isReplyPending: boolean;
@@ -25,12 +28,13 @@ interface CommentItemProps {
   userEmail?: string; // Added for ownership check
 }
 
-export function CommentItem({
+function CommentItemComponent({
   comment,
   depth = 0,
   canInteract,
   canLike,
   repliesEnabled = true,
+  repliesComingSoon = false,
   activeReplyId,
   replyDraft,
   isReplyPending,
@@ -44,6 +48,7 @@ export function CommentItem({
   onDelete, // Added
   userEmail, // Added
 }: CommentItemProps) {
+  const navigate = useNavigate();
   const isReply = depth > 0;
   const likeCount = comment.likeCount ?? 0;
   const isReplyOpen = activeReplyId === comment.id;
@@ -61,16 +66,30 @@ export function CommentItem({
       <div className="flex gap-4">
         <div className="flex flex-col items-center gap-2">
           {isReply ? <CornerDownRight className="h-4 w-4 text-gray-300 dark:text-gray-600" /> : null}
-          <ProfileAvatar
-            src={comment.authorProfileImageUrl}
-            alt={comment.author}
-            size={isReply ? 'sm' : 'md'}
-          />
+          <div
+            className="cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => {
+              if (comment.authorHandle) navigate(`/profile/${comment.authorHandle}`);
+            }}
+          >
+            <ProfileAvatar
+              src={comment.authorProfileImageUrl}
+              alt={comment.author}
+              size={isReply ? 'sm' : 'md'}
+            />
+          </div>
         </div>
         <div className="flex-1">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium text-gray-900 dark:text-white">{comment.author}</p>
+              <p
+                className="font-medium text-gray-900 dark:text-white cursor-pointer hover:underline"
+                onClick={() => {
+                  if (comment.authorHandle) navigate(`/profile/${comment.authorHandle}`);
+                }}
+              >
+                {comment.author}
+              </p>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 {comment.isPending ? '전송 중...' : comment.timeAgo}
               </p>
@@ -108,11 +127,19 @@ export function CommentItem({
             </button>
             {showReplyAction && (
               <button
-                onClick={() => onReplyToggle(comment.id)}
-                disabled={!canInteract}
-                className="flex items-center gap-1 transition-colors hover:text-gray-700 dark:hover:text-gray-300 disabled:cursor-not-allowed disabled:text-gray-400 dark:disabled:text-gray-600"
+                onClick={() => !repliesComingSoon && onReplyToggle(comment.id)}
+                disabled={!canInteract || repliesComingSoon}
+                className={`flex items-center gap-1.5 transition-colors ${repliesComingSoon
+                    ? 'cursor-not-allowed text-gray-400 dark:text-gray-600'
+                    : 'hover:text-gray-700 dark:hover:text-gray-300 disabled:cursor-not-allowed disabled:text-gray-400 dark:disabled:text-gray-600'
+                  }`}
               >
                 답글 달기
+                {repliesComingSoon && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                    준비 중
+                  </span>
+                )}
               </button>
             )}
           </div>
@@ -152,7 +179,7 @@ export function CommentItem({
           {comment.replies && comment.replies.length > 0 && (
             <div className="mt-4 space-y-4">
               {comment.replies.map((reply) => (
-                <CommentItem
+                <CommentItemComponent
                   key={reply.id}
                   comment={reply}
                   depth={depth + 1}
@@ -180,3 +207,6 @@ export function CommentItem({
     </div>
   );
 }
+
+// React.memo to prevent unnecessary re-renders in comment lists
+export const CommentItem = React.memo(CommentItemComponent);

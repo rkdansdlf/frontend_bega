@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { uploadProfileImage, updateProfile } from '../api/profile';
 import { ProfileUpdateData } from '../types/profile';
 import { toast } from 'sonner';
 import { useAuthStore } from '../store/authStore';
+import { DEFAULT_PROFILE_IMAGE } from '../utils/constants';
 
 interface UseProfileEditProps {
   initialProfileImage: string;
@@ -26,6 +27,8 @@ export const useProfileEdit = ({
   initialBio,
   onSave,
 }: UseProfileEditProps) => {
+  const queryClient = useQueryClient(); // ✅ QueryClient 추가
+
   // ========== States ==========
   const [profileImage, setProfileImage] = useState(initialProfileImage);
   const [name, setName] = useState(initialName);
@@ -62,8 +65,13 @@ export const useProfileEdit = ({
 
       // ✅ AuthStore 동기화: favoriteTeam 업데이트
       const { setFavoriteTeam, setUserProfile, fetchProfileAndAuthenticate } = useAuthStore.getState();
-      // 간단히 전체 프로필을 다시 fetch하여 동기화
+
+      // 1. 프로필 정보 갱신 (헤더, 사이드바 등)
       fetchProfileAndAuthenticate();
+
+      // 2. 게시글 목록 갱신 (작성한 글의 프로필 이미지 업데이트 반영)
+      queryClient.invalidateQueries({ queryKey: ['cheer-posts'] });
+      queryClient.invalidateQueries({ queryKey: ['recent-posts'] }); // 홈 화면 등 다른 곳에서도 쓰일 수 있음
 
       setNewProfileImageFile(null);
       setNameError('');  // ✅ 추가: 성공 시 에러 초기화
@@ -163,8 +171,15 @@ export const useProfileEdit = ({
       // 이미지 URL 추가 (업로드했거나 기존 URL 유지)
       if (finalImageUrl) {
         updatedProfile.profileImageUrl = finalImageUrl;
-      } else if (newProfileImageFile === null && profileImage !== 'https://placehold.co/100x100/374151/ffffff?text=User') {
-        updatedProfile.profileImageUrl = profileImage;
+      } else if (newProfileImageFile === null) {
+        const isPlaceholder = profileImage === 'https://placehold.co/100x100/374151/ffffff?text=User';
+        const isLocalAsset = profileImage === DEFAULT_PROFILE_IMAGE
+          || profileImage.startsWith('/assets/')
+          || profileImage.startsWith('/src/assets/');
+
+        if (!isPlaceholder && !isLocalAsset) {
+          updatedProfile.profileImageUrl = profileImage;
+        }
       }
 
       // 프로필 업데이트

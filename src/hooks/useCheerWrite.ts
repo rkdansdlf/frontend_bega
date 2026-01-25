@@ -2,14 +2,12 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 // import { useCheerStore } from '../store/cheerStore'; // Removed
 import { useCheerMutations } from './useCheerQueries'; // Added
-import * as cheerApi from '../api/cheerApi';
 
 export const useCheerWrite = (favoriteTeam: string | null) => {
     const navigate = useNavigate();
     // const { createPost } = useCheerStore(); // Removed
     const { createPostMutation } = useCheerMutations(); // Added
 
-    const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
     const [newFiles, setNewFiles] = useState<File[]>([]);
     const [newFilePreviews, setNewFilePreviews] = useState<{ file: File; url: string }[]>([]);
@@ -26,7 +24,23 @@ export const useCheerWrite = (favoriteTeam: string | null) => {
     };
 
     const addFiles = (files: File[]) => {
-        const validFiles = files.filter(file => file.type.startsWith('image/'));
+        const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+        const validFiles: File[] = [];
+        let skippedCount = 0;
+
+        files.forEach(file => {
+            if (!file.type.startsWith('image/')) return;
+            if (file.size > MAX_SIZE) {
+                skippedCount++;
+                return;
+            }
+            validFiles.push(file);
+        });
+
+        if (skippedCount > 0) {
+            alert(`이미지 크기는 5MB 이하여야 합니다. (${skippedCount}개 파일 제외됨)`);
+        }
+
         const combinedFiles = [...newFiles, ...validFiles].slice(0, 10);
 
         setNewFiles(combinedFiles);
@@ -72,12 +86,11 @@ export const useCheerWrite = (favoriteTeam: string | null) => {
             setShowTeamRequiredDialog(true);
             return;
         }
-        if (!title.trim() || !content.trim()) return;
+        if (!content.trim()) return;
 
         // setIsSubmitting(true);
         createPostMutation.mutate({
             teamId: favoriteTeam,
-            title,
             content,
             postType: 'CHEER',
             files: newFiles
@@ -89,8 +102,6 @@ export const useCheerWrite = (favoriteTeam: string | null) => {
     };
 
     return {
-        title,
-        setTitle,
         content,
         setContent,
         newFilePreviews,

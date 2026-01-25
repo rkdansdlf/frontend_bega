@@ -3,20 +3,23 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuthStore } from '../store/authStore';
-import { Game, DateGames, VoteStatus, ConfirmDialogData, VoteTeam, PredictionTab } from '../types/prediction';
+import { Game, DateGames, VoteStatus, ConfirmDialogData, VoteTeam, PredictionTab, GameDetail } from '../types/prediction';
 import {
   fetchMatchesByDate,
   fetchMatchesByRange,
   fetchAllUserVotes as fetchAllUserVotesAPI,
   fetchVoteStatus,
   submitVote,
-  cancelVote
+  cancelVote,
+  fetchGameDetail
 } from '../api/prediction';
 import {
   groupByDate,
   getTodayString,
   getTomorrowString,
-  getFullTeamName
+  getFullTeamName,
+  formatDate,
+  generateDateRange
 } from '../utils/prediction';
 
 export const usePrediction = () => {
@@ -38,6 +41,10 @@ export const usePrediction = () => {
 
   // 사용자 투표
   const [userVote, setUserVote] = useState<{ [key: string]: VoteTeam | null }>({});
+
+  // 경기 상세 정보
+  const [gameDetails, setGameDetails] = useState<{ [key: string]: GameDetail | null }>({});
+  const [gameDetailLoading, setGameDetailLoading] = useState<{ [key: string]: boolean }>({});
 
   // 다이얼로그 상태
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -74,39 +81,103 @@ export const usePrediction = () => {
     }
   }, [selectedGame, allDatesData, currentDateIndex]);
 
+  // 경기 상세 정보 가져오기
+  useEffect(() => {
+    const currentDateGames = allDatesData[currentDateIndex]?.games || [];
+    if (currentDateGames.length === 0) return;
+
+    const currentGameId = currentDateGames[selectedGame]?.gameId;
+    if (!currentGameId || gameDetails[currentGameId] !== undefined) return;
+
+    const loadGameDetail = async () => {
+      try {
+        setGameDetailLoading((prev) => ({ ...prev, [currentGameId]: true }));
+        const detail = await fetchGameDetail(currentGameId);
+        setGameDetails((prev) => ({ ...prev, [currentGameId]: detail }));
+      } catch {
+        setGameDetails((prev) => ({ ...prev, [currentGameId]: null }));
+      } finally {
+        setGameDetailLoading((prev) => ({ ...prev, [currentGameId]: false }));
+      }
+    };
+
+    loadGameDetail();
+  }, [selectedGame, allDatesData, currentDateIndex, gameDetails]);
+
   // 모든 경기 데이터 가져오기
   const fetchAllGames = async () => {
     try {
       setLoading(true);
 
       const today = getTodayString();
-      const tomorrow = getTomorrowString();
+      const currentYear = new Date().getFullYear();
 
-      // 과거 3개월치 데이터 가져오기 (2025 시즌 포함)
-      const threeMonthsAgo = new Date();
-      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-      const startDate = threeMonthsAgo.toISOString().split('T')[0];
+      // 이전 연도부터 올해 말까지 전체 데이터 조회 (2025-2026) -> 연도 간 네비게이션 지원
+      const startDate = `${currentYear - 1}-01-01`;
+      const endDate = `${currentYear}-12-31`;
 
-      const pastData = await fetchMatchesByRange(startDate, today);
-      const todayData = await fetchMatchesByDate(today);
+      const allMatches = await fetchMatchesByRange(startDate, endDate);
 
-      const groupedPastGames = groupByDate(pastData);
-      const todayGroup: DateGames = { date: today, games: [] };
+      // 1. 실제 경기가 있는 날짜들만 그룹화 (빈 날짜 자동 스킵)
+      let allDates = groupByDate(allMatches);
 
-      const allDates = [...groupedPastGames, todayGroup];
-      if (todayData.length > 0) {
-        const tomorrowGroup: DateGames = { date: tomorrow, games: todayData };
-        allDates.push(tomorrowGroup);
+      // 데이터가 아예 없으면 "오늘"만 표시 (빈 화면)
+      if (allDates.length === 0) {
+        allDates = [{ date: today, games: [] }];
+        setAllDatesData(allDates);
+        setCurrentDateIndex(0);
+        setLoading(false);
+        return;
+      }
+
+      // 날짜순 정렬
+      allDates.sort((a, b) => a.date.localeCompare(b.date));
+
+      // 마지막 날짜에 경기가 있다면, 그 다음 날(빈 날짜)을 하나 추가하여
+      // "다음" 버튼을 눌렀을 때 "예정된 경기가 없습니다" 화면을 볼 수 있게 함
+      const lastEntry = allDates[allDates.length - 1];
+      if (lastEntry.games.length > 0) {
+        const lastDateObj = new Date(lastEntry.date);
+        const nextDateObj = new Date(lastDateObj);
+        nextDateObj.setDate(nextDateObj.getDate() + 1);
+        const nextDateString = nextDateObj.toISOString().split('T')[0];
+
+        allDates.push({ date: nextDateString, games: [] });
       }
 
       setAllDatesData(allDates);
 
-      const todayIndex = allDates.findIndex(d => d.date === today);
-      setCurrentDateIndex(todayIndex !== -1 ? todayIndex : 0);
+      // 오늘 날짜가 목록에 없으면 추가 (네비게이션 기준점 역할)
+      // 단, 이미 위에서 빈 날짜를 추가했으므로 중복 체크 필요
+      const todayExists = allDates.some(d => d.date === today);
+      if (!todayExists) {
+        // 오늘이 목록 범위 내에 있는지 확인, 없으면 삽입하고 다시 정렬
+        allDates.push({ date: today, games: [] });
+        allDates.sort((a, b) => a.date.localeCompare(b.date));
+      }
 
-      // 미래 경기만 사용자 투표 조회
-      if (todayData.length > 0) {
-        const userVotes = await fetchAllUserVotesAPI(todayData);
+      setAllDatesData(allDates);
+
+      // 3. 네비게이션 초기 위치 선정 (Smart Default)
+      // 오늘 날짜가 목록에 있으면 거기서 시작
+      let activeIndex = allDates.findIndex(d => d.date === today);
+
+      if (activeIndex === -1) {
+        // 오늘 날짜가 없으면: 오늘 이후 가장 가까운(빠른) 경기일 찾기
+        activeIndex = allDates.findIndex(d => d.date > today);
+
+        // 오늘 이후 경기도 없으면: 가장 마지막(최신) 경기일 표시
+        if (activeIndex === -1) {
+          activeIndex = allDates.length - 1;
+        }
+      }
+
+      setCurrentDateIndex(activeIndex !== -1 ? activeIndex : 0);
+
+      // 종료되지 않은 전 경기 사용자 투표 조회 (투표 가능 게임들)
+      const interactiveGames = allMatches.filter(game => game.homeScore === null);
+      if (interactiveGames.length > 0) {
+        const userVotes = await fetchAllUserVotesAPI(interactiveGames);
         setUserVote(userVotes);
       }
 
@@ -161,7 +232,7 @@ export const usePrediction = () => {
     if (userVote[gameId] === team) {
       setConfirmDialogData({
         title: '투표 취소',
-        description: '투표를 취소하시겠습니까?',
+        description: '투표를 취소하시겠습니까?\n\n(❗️ 주의: 사용된 포인트는 반환되지 않습니다)',
         onConfirm: () => {
           setShowConfirmDialog(false);
           executeCancelVote(gameId);
@@ -179,6 +250,11 @@ export const usePrediction = () => {
   const executeVote = async (gameId: string, team: VoteTeam, game: Game) => {
     try {
       await submitVote(gameId, team);
+
+      // 포인트 즉시 차감 (UI 업데이트)
+      const { deductCheerPoints } = useAuthStore.getState();
+      deductCheerPoints(1);
+
       setUserVote(prev => ({ ...prev, [gameId]: team }));
       loadVoteStatus(gameId);
 
@@ -195,6 +271,7 @@ export const usePrediction = () => {
   const executeCancelVote = async (gameId: string) => {
     const success = await cancelVote(gameId);
     if (success) {
+
       setUserVote(prev => ({ ...prev, [gameId]: null }));
       loadVoteStatus(gameId);
       toast.success('투표가 취소되었습니다.');
@@ -225,6 +302,9 @@ export const usePrediction = () => {
   // 현재 날짜의 경기 정보
   const currentDateGames = allDatesData[currentDateIndex]?.games || [];
   const currentDate = allDatesData[currentDateIndex]?.date || getTodayString();
+  const currentGameId = currentDateGames[selectedGame]?.gameId;
+  const currentGameDetail = currentGameId ? gameDetails[currentGameId] ?? null : null;
+  const currentGameDetailLoading = currentGameId ? !!gameDetailLoading[currentGameId] : false;
 
   return {
     // State
@@ -239,6 +319,8 @@ export const usePrediction = () => {
     loading,
     votes,
     userVote,
+    currentGameDetail,
+    currentGameDetailLoading,
     isAuthLoading,
     isLoggedIn,
 

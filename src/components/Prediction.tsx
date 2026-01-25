@@ -1,9 +1,10 @@
 import { Card } from './ui/card';
 import { Button } from './ui/button';
-import { TrendingUp, ChevronLeft, ChevronRight, Trophy, Flame, Target } from 'lucide-react';
+import { TrendingUp, ChevronLeft, ChevronRight, Trophy, Flame, Target, Coins, LineChart } from 'lucide-react';
 import ChatBot from './ChatBot';
 import RankingPrediction from './RankingPrediction';
 import AdvancedMatchCard from './prediction/AdvancedMatchCard';
+import CoachBriefing from './CoachBriefing';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,8 +16,9 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 import { usePrediction } from '../hooks/usePrediction';
-import { 
-  formatDate, 
+import { useAuthStore } from '../store/authStore';
+import {
+  formatDate,
   calculateVotePercentages,
   calculateVoteAccuracy,
   getGameStatus,
@@ -42,6 +44,8 @@ export default function Prediction() {
     loading,
     votes,
     userVote,
+    currentGameDetail,
+    currentGameDetailLoading,
     isAuthLoading,
     showConfirmDialog,
     setShowConfirmDialog,
@@ -51,31 +55,90 @@ export default function Prediction() {
     handleVote,
     goToPreviousDate,
     goToNextDate,
+    isLoggedIn, // Added isLoggedIn
   } = usePrediction();
+
+  const user = useAuthStore((state) => state.user); // Added user
 
   // 현재 경기 정보
   const currentGame = currentDateGames.length > 0 ? currentDateGames[selectedGame] : null;
   const currentGameId = currentGame?.gameId;
-  
+
   // 투표 현황 계산
   const currentVotes = currentGameId ? votes[currentGameId] || { home: 0, away: 0 } : { home: 0, away: 0 };
   const votePercentages = calculateVotePercentages(
     currentVotes.home,
     currentVotes.away
   );
-  
+
   // 경기 상태 확인
   const { isPastGame, isFutureGame, isToday } = getGameStatus(currentGame, currentDate);
 
-  // 로딩 중
+  // 로딩 중 - 스켈레톤 UI
   if (isAuthLoading || loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors duration-200">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2d5f4f] dark:border-[#4ade80] mx-auto mb-4"></div>
-          <p className="text-[#2d5f4f] dark:text-[#4ade80] font-medium">
-            {isAuthLoading ? '로그인 확인 중...' : '경기 데이터를 불러오는 중...'}
-          </p>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {/* Title skeleton */}
+          <div className="flex items-center gap-3 mb-6">
+            <div className="bg-gray-200 dark:bg-gray-700 p-2 rounded-lg w-10 h-10 animate-pulse" />
+            <div className="h-8 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+          </div>
+
+          {/* Stats skeleton */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
+            {[1, 2, 3, 4].map((i) => (
+              <Card key={i} className="p-4 bg-white dark:bg-gray-800 border-none shadow-sm animate-pulse">
+                <div className="flex flex-col sm:flex-row items-center gap-2 md:gap-3">
+                  <div className="w-9 h-9 rounded-full bg-gray-200 dark:bg-gray-700" />
+                  <div className="space-y-2">
+                    <div className="h-3 w-12 bg-gray-200 dark:bg-gray-700 rounded" />
+                    <div className="h-5 w-16 bg-gray-200 dark:bg-gray-700 rounded" />
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          {/* Tab skeleton */}
+          <div className="flex p-1 bg-gray-200 dark:bg-gray-800 rounded-xl md:rounded-2xl mb-6 md:mb-8 w-fit animate-pulse">
+            <div className="w-20 h-10 bg-gray-300 dark:bg-gray-700 rounded-lg" />
+            <div className="w-20 h-10 bg-gray-300 dark:bg-gray-700 rounded-lg ml-1" />
+          </div>
+
+          {/* Match card skeleton */}
+          <Card className="p-4 mb-6 bg-white dark:bg-gray-800 border-none shadow-sm animate-pulse">
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 bg-gray-200 dark:bg-gray-700 rounded-full" />
+              <div className="flex-1 text-center space-y-2 px-4">
+                <div className="h-5 w-32 bg-gray-200 dark:bg-gray-700 rounded mx-auto" />
+                <div className="h-4 w-48 bg-gray-200 dark:bg-gray-700 rounded mx-auto" />
+              </div>
+              <div className="w-10 h-10 bg-gray-200 dark:bg-gray-700 rounded-full" />
+            </div>
+          </Card>
+
+          <Card className="overflow-hidden border-0 shadow-lg bg-white dark:bg-gray-800 animate-pulse">
+            <div className="h-12 bg-gray-300 dark:bg-gray-700" />
+            <div className="p-6 space-y-6">
+              <div className="flex justify-between">
+                <div className="flex flex-col items-center w-1/3 space-y-2">
+                  <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded-full" />
+                  <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded" />
+                  <div className="h-3 w-16 bg-gray-200 dark:bg-gray-700 rounded" />
+                </div>
+                <div className="flex flex-col items-center w-1/3 space-y-2">
+                  <div className="h-8 w-12 bg-gray-200 dark:bg-gray-700 rounded" />
+                  <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded" />
+                </div>
+                <div className="flex flex-col items-center w-1/3 space-y-2">
+                  <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded-full" />
+                  <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded" />
+                  <div className="h-3 w-16 bg-gray-200 dark:bg-gray-700 rounded" />
+                </div>
+              </div>
+            </div>
+          </Card>
         </div>
       </div>
     );
@@ -111,65 +174,46 @@ export default function Prediction() {
         {/* Title */}
         <div className="flex items-center gap-3 mb-6">
           <div className="bg-[#2d5f4f] dark:bg-[#4ade80] p-2 rounded-lg">
-            <TrendingUp className="w-6 h-6 text-white dark:text-gray-900" />
+            <LineChart className="w-6 h-6 text-white dark:text-gray-900" />
           </div>
-          <h2 className="text-2xl font-black text-[#2d5f4f] dark:text-[#4ade80]">KBO 예측</h2>
+          <div className="flex-1">
+            <h2 className="text-2xl font-black text-[#2d5f4f] dark:text-[#4ade80]">전력분석실</h2>
+          </div>
+          {isLoggedIn && (
+            <div className="flex md:hidden items-center gap-1.5 px-3 py-1.5 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-700/50 rounded-full">
+              <Coins className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+              <span className="text-sm font-bold text-yellow-700 dark:text-yellow-300 tabular-nums">
+                {user?.cheerPoints?.toLocaleString() || 0} P
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* User Stats Widget (Gamification) */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
-          <Card className="p-4 bg-white dark:bg-gray-800 border-none shadow-sm flex flex-col sm:flex-row items-center gap-2 md:gap-3">
-            <div className="p-2 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shrink-0">
-              <Target className="w-5 h-5" />
-            </div>
-            <div className="text-center sm:text-left">
-              <p className="text-xs text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap">적중률</p>
-              <p className="text-lg md:text-xl font-bold text-gray-900 dark:text-white">{dummyUserStats.accuracy}%</p>
-            </div>
-          </Card>
-          <Card className="p-4 bg-white dark:bg-gray-800 border-none shadow-sm flex flex-col sm:flex-row items-center gap-2 md:gap-3">
-            <div className={`p-2 rounded-full shrink-0 ${dummyUserStats.streak >= 3 ? 'bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 animate-pulse' : 'bg-gray-100 text-gray-500'}`}>
-              <Flame className="w-5 h-5" />
-            </div>
-            <div className="text-center sm:text-left">
-              <p className="text-xs text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap">연승 도전</p>
-              <p className="text-lg md:text-xl font-bold text-gray-900 dark:text-white">{dummyUserStats.streak}연승</p>
-            </div>
-          </Card>
-          <Card className="p-4 bg-white dark:bg-gray-800 border-none shadow-sm flex flex-col sm:flex-row items-center gap-2 md:gap-3 col-span-2 md:col-span-1">
-            <div className="p-2 rounded-full bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 shrink-0">
-              <Trophy className="w-5 h-5" />
-            </div>
-            <div className="text-center sm:text-left">
-              <p className="text-xs text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap">총 예측</p>
-              <p className="text-lg md:text-xl font-bold text-gray-900 dark:text-white">{dummyUserStats.totalPredictions}회</p>
-            </div>
-          </Card>
-          {/* 추가 스탯 자리 or 광고 배너 */}
-          <div className="hidden md:flex items-center justify-center rounded-xl bg-gradient-to-r from-[#2d5f4f] to-[#1f4438] text-white p-4 shadow-sm">
-             <span className="text-sm font-medium opacity-90">오늘의 승부 예측하고 포인트를 받으세요!</span>
-          </div>
-        </div>
+        {/* Coach Briefing Widget */}
+        <CoachBriefing
+          game={currentGame}
+          votePercentages={votePercentages}
+          totalVotes={currentVotes.home + currentVotes.away}
+          isToday={isToday}
+        />
 
         {/* Tabs */}
         <div className="flex p-1 bg-gray-200 dark:bg-gray-800 rounded-xl md:rounded-2xl mb-6 md:mb-8 w-full md:w-fit">
           <button
             onClick={() => setActiveTab('match')}
-            className={`flex-1 md:flex-none px-4 md:px-6 py-2 md:py-2.5 rounded-lg md:rounded-xl transition-all text-xs md:text-sm font-bold ${
-              activeTab === 'match'
-                ? 'bg-white dark:bg-gray-700 text-[#2d5f4f] dark:text-white shadow-sm'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
+            className={`flex-1 md:flex-none px-4 md:px-6 py-2 md:py-2.5 rounded-lg md:rounded-xl transition-all text-xs md:text-sm font-bold ${activeTab === 'match'
+              ? 'bg-white dark:bg-gray-700 text-[#2d5f4f] dark:text-white shadow-sm'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+              }`}
           >
             승부예측
           </button>
           <button
             onClick={() => setActiveTab('ranking')}
-            className={`flex-1 md:flex-none px-4 md:px-6 py-2 md:py-2.5 rounded-lg md:rounded-xl transition-all text-xs md:text-sm font-bold ${
-              activeTab === 'ranking'
-                ? 'bg-white dark:bg-gray-700 text-[#2d5f4f] dark:text-white shadow-sm'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
+            className={`flex-1 md:flex-none px-4 md:px-6 py-2 md:py-2.5 rounded-lg md:rounded-xl transition-all text-xs md:text-sm font-bold ${activeTab === 'ranking'
+              ? 'bg-white dark:bg-gray-700 text-[#2d5f4f] dark:text-white shadow-sm'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+              }`}
           >
             순위예측
           </button>
@@ -183,7 +227,8 @@ export default function Prediction() {
                 <button
                   onClick={goToPreviousDate}
                   disabled={currentDateIndex === 0}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-[#2d5f4f] dark:text-[#4ade80]"
+                  aria-label="이전 날짜"
+                  className="p-3 min-w-[44px] min-h-[44px] flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-[#2d5f4f] dark:text-[#4ade80]"
                 >
                   <ChevronLeft size={24} />
                 </button>
@@ -196,17 +241,18 @@ export default function Prediction() {
                     {isPastGame
                       ? '지난 경기 결과를 확인하세요'
                       : isFutureGame
-                      ? '승리가 예상되는 팀을 선택하세요'
-                      : isToday && currentDateGames.length === 0
-                      ? '오늘은 경기가 없습니다'
-                      : '승리가 예상되는 팀을 선택하세요'}
+                        ? '승리가 예상되는 팀을 선택하세요'
+                        : isToday && currentDateGames.length === 0
+                          ? '오늘은 경기가 없습니다'
+                          : '승리가 예상되는 팀을 선택하세요'}
                   </p>
                 </div>
 
                 <button
                   onClick={goToNextDate}
                   disabled={currentDateIndex === allDatesData.length - 1}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-[#2d5f4f] dark:text-[#4ade80]"
+                  aria-label="다음 날짜"
+                  className="p-3 min-w-[44px] min-h-[44px] flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-[#2d5f4f] dark:text-[#4ade80]"
                 >
                   <ChevronRight size={24} />
                 </button>
@@ -221,11 +267,12 @@ export default function Prediction() {
                     <button
                       key={index}
                       onClick={() => setSelectedGame(index)}
-                      className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-bold transition-all ${
-                        selectedGame === index
-                          ? 'bg-[#2d5f4f] text-white shadow-md'
-                          : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border border-transparent hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}
+                      aria-pressed={selectedGame === index}
+                      aria-label={`${index + 1}경기 선택`}
+                      className={`flex-shrink-0 px-4 py-3 min-h-[44px] rounded-full text-sm font-bold transition-all ${selectedGame === index
+                        ? 'bg-[#2d5f4f] text-white shadow-md'
+                        : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border border-transparent hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
                     >
                       {index + 1}경기
                     </button>
@@ -234,9 +281,11 @@ export default function Prediction() {
 
                 {/* Advanced Game Card */}
                 {currentGame && (
-                  <AdvancedMatchCard 
+                  <AdvancedMatchCard
                     key={currentGame.gameId}
                     game={currentGame}
+                    gameDetail={currentGameDetail}
+                    gameDetailLoading={currentGameDetailLoading}
                     userVote={userVote[currentGameId!] || null}
                     votePercentages={votePercentages}
                     isPastGame={isPastGame}

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Client } from '@stomp/stompjs';
-import SockJS from 'sockjs-client';
+
 import { useAuthStore } from '../store/authStore';
 import { useNotificationStore } from '../store/notificationStore';
 import { NotificationData } from '../types/notification';
@@ -25,20 +25,15 @@ export const useNotificationSocket = () => {
             return;
         }
 
-        let socketUrl: string;
-
-        if (import.meta.env.DEV) {
-            // 개발 환경: 프록시 타겟(8080) 직접 사용 또는 로컬호스트
-            socketUrl = 'http://localhost:8080/ws';
-        } else {
-            // 배포 환경: 현재 도메인의 /ws 엔드포인트 사용 (Nginx 등이 라우팅)
-            const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-            socketUrl = `${protocol}//${window.location.host}/ws`;
-        }
+        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+        const wsBaseUrl = apiBaseUrl
+            .replace(/^http:/, 'ws:')
+            .replace(/^https:/, 'wss:')
+            .replace(/\/api\/?$/, '');
+        const brokerUrl = `${wsBaseUrl}/ws`;
 
         const client = new Client({
-            // SockJS를 사용하는 factory 함수
-            webSocketFactory: () => new SockJS(socketUrl),
+            brokerURL: brokerUrl,
 
             // 재연결 설정
             reconnectDelay: 5000,
@@ -54,6 +49,8 @@ export const useNotificationSocket = () => {
                         const notification: NotificationData = JSON.parse(message.body);
                         console.log('New notification received:', notification);
                         addNotification(notification);
+                        // 알림 수신 시 사용자 정보(포인트 등) 최신화
+                        useAuthStore.getState().fetchProfileAndAuthenticate();
                     } catch (error) {
                         console.error('Failed to parse notification:', error);
                     }

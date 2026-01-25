@@ -7,6 +7,7 @@ export default function OAuthCallback() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const login = useAuthStore((state) => state.login);
+  const fetchProfileAndAuthenticate = useAuthStore((state) => state.fetchProfileAndAuthenticate);
 
   useEffect(() => {
     const email = searchParams.get('email');
@@ -14,18 +15,24 @@ export default function OAuthCallback() {
     const role = searchParams.get('role');
     const profileImageUrl = searchParams.get('profileImageUrl');
     const favoriteTeam = searchParams.get('favoriteTeam');
+    const handle = searchParams.get('handle');
 
     if (email && name) {
       login(
-        email, 
-        name, 
-        profileImageUrl || undefined, 
+        email,
+        name,
+        profileImageUrl || undefined,
         role || undefined,
-        favoriteTeam || undefined 
+        favoriteTeam || undefined,
+        undefined,
+        undefined,
+        handle || undefined
       );
 
       setTimeout(() => {
-        navigate('/home', { replace: true });
+        fetchProfileAndAuthenticate();
+        const redirectPath = handle ? `/mypage/${handle.startsWith('@') ? handle : `@${handle}`}` : '/home';
+        navigate(redirectPath, { replace: true });
       }, 100);
     } else {
       navigate('/login', { replace: true });

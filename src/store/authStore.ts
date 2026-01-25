@@ -11,6 +11,7 @@ interface User {
   id: number;
   email: string;
   name?: string;
+  handle?: string;
   favoriteTeam?: string;
   favoriteTeamColor?: string;
   isAdmin?: boolean;
@@ -18,7 +19,8 @@ interface User {
   role?: string;
   provider?: string;    // 'LOCAL', 'GOOGLE', 'KAKAO', 'NAVER'
   providerId?: string;
-  bio?: string | null;  // Added bio
+  bio?: string | null;
+  cheerPoints?: number; // Added cheerPoints
 }
 
 interface AuthState {
@@ -33,11 +35,12 @@ interface AuthState {
 
   fetchProfileAndAuthenticate: () => Promise<void>;
   setUserProfile: (profile: Omit<User, 'email'> & { email: string, name: string }) => void;
+  deductCheerPoints: (amount: number) => void; // Added action
 
   setEmail: (email: string) => void;
   setPassword: (password: string) => void;
   setShowPassword: (show: boolean) => void;
-  login: (email: string, name: string, profileImageUrl?: string, role?: string, favoriteTeam?: string, id?: number) => void;
+  login: (email: string, name: string, profileImageUrl?: string, role?: string, favoriteTeam?: string, id?: number, cheerPoints?: number, handle?: string) => void;
   logout: () => void;
   setFavoriteTeam: (team: string, color: string) => void;
   setShowLoginRequiredDialog: (show: boolean) => void;
@@ -73,12 +76,14 @@ export const useAuthStore = create<AuthState>()(
                 id: profile.id,
                 email: profile.email,
                 name: profile.name,
+                handle: profile.handle,
                 favoriteTeam: profile.favoriteTeam,
                 favoriteTeamColor: profile.favoriteTeamColor,
                 isAdmin: isAdminUser,
                 profileImageUrl: profile.profileImageUrl,
                 role: profile.role,
                 bio: profile.bio,
+                cheerPoints: profile.cheerPoints ?? profile['cheer_points'] ?? 0, // Map cheerPoints (defensive check)
               },
               isLoggedIn: true,
               isAdmin: isAdminUser,
@@ -112,7 +117,20 @@ export const useAuthStore = create<AuthState>()(
         }));
       },
 
-      login: (email, name, profileImageUrl, role, favoriteTeam, id) => {
+      deductCheerPoints: (amount) => {
+        set((state) => {
+          if (!state.user) return {};
+          const currentPoints = state.user.cheerPoints || 0;
+          return {
+            user: {
+              ...state.user,
+              cheerPoints: Math.max(0, currentPoints - amount)
+            }
+          };
+        });
+      },
+
+      login: (email, name, profileImageUrl, role, favoriteTeam, id, cheerPoints, handle) => {
         const isAdminUser = role === 'ROLE_ADMIN' || role === 'ROLE_SUPER_ADMIN';
 
         set({
@@ -124,6 +142,8 @@ export const useAuthStore = create<AuthState>()(
             profileImageUrl: profileImageUrl || 'https://placehold.co/100x100/374151/ffffff?text=User',
             role: role,
             favoriteTeam: favoriteTeam || '없음',
+            cheerPoints: cheerPoints || 0,
+            handle: handle,
           },
           isLoggedIn: true,
           isAdmin: isAdminUser,

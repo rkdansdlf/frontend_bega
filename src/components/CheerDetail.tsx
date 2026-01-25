@@ -7,11 +7,13 @@ import {
     ArrowLeft,
     Heart,
     MessageSquare,
+    Repeat2,
     Share2,
     MoreVertical,
     Trash2,
     Edit2,
-    Bookmark
+    Bookmark,
+    Flag
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -19,6 +21,11 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger
 } from './ui/dropdown-menu';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger
+} from './ui/popover';
 import { cn } from '../lib/utils';
 import * as cheatApi from '../api/cheerApi';
 import { CommentItem } from './cheer/CommentItem';
@@ -27,6 +34,8 @@ import { TEAM_DATA } from '../constants/teams';
 import baseballLogo from '../assets/d8ca714d95aedcc16fe63c80cbc299c6e3858c70.png';
 import { useCheerPost, useCheerMutations } from '../hooks/useCheerQueries';
 import UserProfileModal from './profile/UserProfileModal';
+import ReportModal from './ReportModal';
+import QuoteRepostEditor from './QuoteRepostEditor';
 
 export default function CheerDetail() {
     const { postId } = useParams();
@@ -35,7 +44,7 @@ export default function CheerDetail() {
 
     const parsedPostId = postId ? parseInt(postId) : 0;
     const { data: selectedPost, isLoading: loading, error } = useCheerPost(parsedPostId);
-    const { toggleLikeMutation, toggleBookmarkMutation, deletePostMutation, deleteCommentMutation } = useCheerMutations();
+    const { toggleLikeMutation, toggleBookmarkMutation, deletePostMutation, deleteCommentMutation, repostMutation, cancelRepostMutation } = useCheerMutations();
 
     const [commentText, setCommentText] = useState('');
     const [comments, setComments] = useState<(cheatApi.Comment & { isPending?: boolean })[]>([]);
@@ -48,9 +57,13 @@ export default function CheerDetail() {
     const [isReplyPending, setIsReplyPending] = useState(false);
     const [commentLikeAnimating, setCommentLikeAnimating] = useState<Record<number, boolean>>({});
     const commentLikeTimersRef = useRef<Record<number, number>>({});
+    const [isRepostPopoverOpen, setIsRepostPopoverOpen] = useState(false);
+    const [isQuoteEditorOpen, setIsQuoteEditorOpen] = useState(false);
 
     // Profile Modal State
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+    // Report Modal State
+    const [isReportModalOpen, setIsReportModalOpen] = useState(false);
     const [viewingUserId, setViewingUserId] = useState<number | null>(null);
 
     useEffect(() => {
@@ -58,6 +71,13 @@ export default function CheerDetail() {
             loadComments(parsedPostId);
         }
     }, [parsedPostId]);
+
+    // Redirect Simple Reposts to Original Post
+    useEffect(() => {
+        if (selectedPost?.repostType === 'SIMPLE' && selectedPost.originalPost) {
+            navigate(`/cheer/${selectedPost.originalPost.id}`, { replace: true });
+        }
+    }, [selectedPost, navigate]);
 
     useEffect(() => {
         if (selectedPost) {
@@ -122,6 +142,35 @@ export default function CheerDetail() {
         if (selectedPost) {
             navigate(`/cheer/edit/${selectedPost.id}`);
         }
+    };
+
+    const handleSimpleRepost = () => {
+        if (!selectedPost) return;
+        if (!user) {
+            alert('로그인이 필요한 서비스입니다.');
+            return;
+        }
+        setIsRepostPopoverOpen(false);
+        repostMutation.mutate(selectedPost.id);
+    };
+
+    const handleQuoteRepost = () => {
+        if (!user) {
+            alert('로그인이 필요한 서비스입니다.');
+            return;
+        }
+        setIsRepostPopoverOpen(false);
+        setIsQuoteEditorOpen(true);
+    };
+
+    const handleCancelRepost = () => {
+        if (!selectedPost) return;
+        if (!user) {
+            alert('로그인이 필요한 서비스입니다.');
+            return;
+        }
+        setIsRepostPopoverOpen(false);
+        cancelRepostMutation.mutate(selectedPost.id);
     };
 
     const handleCommentSubmit = async () => {
@@ -319,11 +368,14 @@ export default function CheerDetail() {
         );
     }
 
+    const repostCount = selectedPost.repostCount ?? 0;
+    const repostActive = selectedPost.repostedByMe || (selectedPost.repostType && selectedPost.isOwner);
+
     return (
         <div className="min-h-screen bg-[#f7f9f9] dark:bg-[#0E1117] pb-24 sm:pb-20">
             {/* Header */}
             <div className="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
-                <button onClick={() => navigate(-1)} className="p-2 -ml-2 hover:bg-gray-100 rounded-full">
+                <button onClick={() => navigate(-1)} className="p-2 -ml-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors">
                     <ArrowLeft className="w-5 h-5" />
                 </button>
                 <div className="font-bold truncate max-w-[200px]">게시글</div>
@@ -333,218 +385,347 @@ export default function CheerDetail() {
             <div className="mx-auto w-full max-w-[880px] px-4 sm:px-6 lg:px-8">
                 <article className="mt-6 rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-[#151A23] shadow-sm">
                     <div className="px-4 sm:px-6 lg:px-8 py-6">
-                    {/* Post Meta */}
-                    <div className="flex items-start justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                            <div className="relative h-11 w-11 sm:h-12 sm:w-12 flex-shrink-0">
-                                <div className="h-full w-full rounded-full bg-slate-100 dark:bg-slate-700 ring-1 ring-black/5 dark:ring-white/10 flex items-center justify-center text-sm font-semibold text-slate-600 dark:text-slate-300 overflow-hidden">
-                                    {selectedPost.authorProfileImageUrl ? (
-                                        <img
-                                            src={selectedPost.authorProfileImageUrl}
-                                            alt={selectedPost.author}
-                                            className="h-full w-full object-cover"
-                                        />
-                                    ) : (
-                                        <img
-                                            src={baseballLogo}
-                                            alt="BEGA"
-                                            className="h-6 w-6"
-                                        />
+                        {/* Post Meta */}
+                        <div className="flex items-start justify-between gap-4">
+                            <div className="flex items-center gap-3">
+                                <div
+                                    className="relative h-11 w-11 sm:h-12 sm:w-12 flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                                    onClick={() => {
+                                        if (selectedPost.authorHandle) {
+                                            navigate(`/profile/${selectedPost.authorHandle}`);
+                                        }
+                                    }}
+                                >
+                                    <div className="h-full w-full rounded-full bg-slate-100 dark:bg-slate-700 ring-1 ring-black/5 dark:ring-white/10 flex items-center justify-center text-sm font-semibold text-slate-600 dark:text-slate-300 overflow-hidden">
+                                        {selectedPost.authorProfileImageUrl ? (
+                                            <img
+                                                src={selectedPost.authorProfileImageUrl}
+                                                alt={selectedPost.author}
+                                                className="h-full w-full object-cover"
+                                            />
+                                        ) : (
+                                            <img
+                                                src={baseballLogo}
+                                                alt="BEGA"
+                                                className="h-6 w-6"
+                                            />
+                                        )}
+                                    </div>
+                                    {selectedPost.authorTeamId && (
+                                        <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-white ring-2 ring-white dark:ring-slate-700 overflow-hidden flex items-center justify-center">
+                                            <TeamLogo
+                                                team={TEAM_DATA[selectedPost.authorTeamId]?.name || selectedPost.authorTeamId}
+                                                size={18}
+                                            />
+                                        </div>
                                     )}
                                 </div>
-                                {selectedPost.authorTeamId && (
-                                    <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-white ring-2 ring-white dark:ring-slate-700 overflow-hidden flex items-center justify-center">
-                                        <TeamLogo
-                                            team={TEAM_DATA[selectedPost.authorTeamId]?.name || selectedPost.authorTeamId}
-                                            size={18}
+                                <div
+                                    className="cursor-pointer hover:underline"
+                                    onClick={() => {
+                                        if (selectedPost.authorHandle) {
+                                            navigate(`/profile/${selectedPost.authorHandle}`);
+                                        }
+                                    }}
+                                >
+                                    <div className="text-[15px] sm:text-[16px] font-bold text-gray-900 dark:text-gray-100">
+                                        {selectedPost.author}
+                                    </div>
+                                    <div className="text-xs text-gray-500 flex items-center gap-2">
+                                        <span>{selectedPost.timeAgo}</span>
+                                        <span>·</span>
+                                        <span>조회 {selectedPost.views}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {selectedPost.isOwner && (
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <button className="p-2 text-gray-400 hover:text-gray-600">
+                                            <MoreVertical className="w-5 h-5" />
+                                        </button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={handleDisplayEdit}>
+                                            <Edit2 className="w-4 h-4 mr-2" />
+                                            수정하기
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={handleDelete} className="text-red-500 focus:text-red-500">
+                                            <Trash2 className="w-4 h-4 mr-2" />
+                                            삭제하기
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            )}
+
+                            {/* Report Button for non-owners */}
+                            {!selectedPost.isOwner && user && (
+                                <button
+                                    onClick={() => setIsReportModalOpen(true)}
+                                    className="p-2 text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                                    title="신고하기"
+                                >
+                                    <Flag className="w-5 h-5" />
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Post Content */}
+                        <div className="mt-5 text-[15px] sm:text-[16px] text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-6 sm:leading-7 min-h-[100px]">
+                            {selectedPost.content}
+                        </div>
+
+                        {/* Images */}
+                        {selectedPost.images && selectedPost.images.length > 0 && (
+                            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {selectedPost.images.map((img, idx) => (
+                                    <div key={idx} className="overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800">
+                                        <img
+                                            src={img}
+                                            alt={`uploaded-${idx}`}
+                                            className="h-full w-full object-cover aspect-[4/3]"
                                         />
                                     </div>
-                                )}
+                                ))}
                             </div>
-                            <div
-                                className="cursor-pointer hover:underline"
-                                onClick={() => {
-                                    if (selectedPost.authorId) {
-                                        setViewingUserId(selectedPost.authorId);
-                                        setIsProfileModalOpen(true);
+                        )}
+
+                        {/* Action Buttons */}
+                        <div className="mt-6 flex flex-wrap items-center gap-2 sm:gap-4 py-4 border-t border-b border-gray-100 dark:border-gray-800 text-sm">
+                            <button
+                                onClick={() => toggleLike(selectedPost.id)}
+                                className={cn(
+                                    "flex items-center gap-2 px-4 py-2 rounded-full transition-colors",
+                                    selectedPost.likedByUser
+                                        ? "bg-red-50 dark:bg-red-900/20 text-red-500"
+                                        : "bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700"
+                                )}
+                            >
+                                <Heart className={cn("w-5 h-5", selectedPost.likedByUser && "fill-current")} />
+                                <span className="font-semibold">{selectedPost.likes}</span>
+                            </button>
+
+                            <button className="flex items-center gap-2 px-4 py-2 rounded-full bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+                                <MessageSquare className="w-5 h-5" />
+                                <span className="font-semibold">{commentCount}</span>
+                            </button>
+                            <Popover
+                                open={isRepostPopoverOpen}
+                                onOpenChange={(open) => {
+                                    if (open && !user) {
+                                        alert('로그인이 필요한 서비스입니다.');
+                                        return;
                                     }
+                                    setIsRepostPopoverOpen(open);
                                 }}
                             >
-                                <div className="text-[15px] sm:text-[16px] font-bold text-gray-900 dark:text-gray-100">
-                                    {selectedPost.author}
-                                </div>
-                                <div className="text-xs text-gray-500 flex items-center gap-2">
-                                    <span>{selectedPost.timeAgo}</span>
-                                    <span>·</span>
-                                    <span>조회 {selectedPost.views}</span>
-                                </div>
-                            </div>
+                                <PopoverTrigger asChild>
+                                    <button
+                                        className={cn(
+                                            "flex items-center gap-2 px-4 py-2 rounded-full transition-colors",
+                                            repostActive
+                                                ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600"
+                                                : "bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700"
+                                        )}
+                                        aria-label={repostActive ? `리포스트 취소 (현재 ${repostCount}회)` : `리포스트 (현재 ${repostCount}회)`}
+                                        aria-pressed={repostActive}
+                                    >
+                                        <Repeat2 className="w-5 h-5" />
+                                        <span className="font-semibold">{repostCount}</span>
+                                    </button>
+                                </PopoverTrigger>
+                                <PopoverContent
+                                    className="w-48 p-0"
+                                    align="start"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <div className="flex flex-col py-1">
+                                        {(selectedPost.repostType && selectedPost.isOwner) ? (
+                                            <button
+                                                onClick={handleCancelRepost}
+                                                className="flex items-center gap-3 px-4 py-3 text-left hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                            >
+                                                <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+                                                <div>
+                                                    <span className="block text-sm font-medium text-red-600 dark:text-red-400">
+                                                        리포스트 삭제
+                                                    </span>
+                                                </div>
+                                            </button>
+                                        ) : (selectedPost.repostType && !selectedPost.isOwner) ? (
+                                            <div className="px-4 py-3 text-sm text-gray-400 text-center">
+                                                리포스트할 수 없습니다
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    onClick={handleSimpleRepost}
+                                                    className="flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                                                >
+                                                    <div className="flex items-center justify-center w-5 h-5">
+                                                        {selectedPost.repostedByMe ? (
+                                                            <div className="relative">
+                                                                <Repeat2 className="w-4 h-4 text-emerald-500" />
+                                                                <div className="absolute top-0 right-0 w-2 h-0.5 bg-red-500 rotate-45 transform origin-center" />
+                                                            </div>
+                                                        ) : (
+                                                            <Repeat2 className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                                                        )}
+                                                    </div>
+                                                    <div>
+                                                        <span className={`block text-sm font-medium ${selectedPost.repostedByMe ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-700 dark:text-gray-200'}`}>
+                                                            {selectedPost.repostedByMe ? '리포스트 취소' : '리포스트'}
+                                                        </span>
+                                                    </div>
+                                                </button>
+                                                <button
+                                                    onClick={handleQuoteRepost}
+                                                    className="flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                                                >
+                                                    <div className="flex items-center justify-center w-5 h-5">
+                                                        <Edit2 className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                                                    </div>
+                                                    <div>
+                                                        <span className="block text-sm font-medium text-gray-700 dark:text-gray-200">
+                                                            인용하기
+                                                        </span>
+                                                    </div>
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                </PopoverContent>
+                            </Popover>
+
+                            <button
+                                onClick={() => toggleBookmark(selectedPost.id)}
+                                className={cn(
+                                    "flex items-center gap-2 px-4 py-2 rounded-full transition-colors sm:ml-auto",
+                                    selectedPost.isBookmarked
+                                        ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600"
+                                        : "bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700"
+                                )}
+                            >
+                                <Bookmark className={cn("w-5 h-5", selectedPost.isBookmarked && "fill-current")} />
+                            </button>
+                        </div>
+                    </div>
+                </article>
+
+                {/* Comment Section */}
+                <section className="mt-6 rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-[#151A23] shadow-sm">
+                    <div className="px-4 sm:px-6 lg:px-8 py-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-bold text-[15px] sm:text-[16px]">댓글 {commentCount}개</h3>
                         </div>
 
-                        {selectedPost.isOwner && (
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <button className="p-2 text-gray-400 hover:text-gray-600">
-                                        <MoreVertical className="w-5 h-5" />
-                                    </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={handleDisplayEdit}>
-                                        <Edit2 className="w-4 h-4 mr-2" />
-                                        수정하기
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={handleDelete} className="text-red-500 focus:text-red-500">
-                                        <Trash2 className="w-4 h-4 mr-2" />
-                                        삭제하기
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
+                        {/* Comment Input */}
+                        {user ? (
+                            <div className="flex flex-col sm:flex-row gap-3 mb-8">
+                                <Textarea
+                                    value={commentText}
+                                    onChange={(e) => setCommentText(e.target.value)}
+                                    placeholder="댓글을 남겨주세요."
+                                    disabled={sendingComment}
+                                    className="min-h-[88px] sm:min-h-[96px] bg-gray-50 dark:bg-gray-900 resize-none"
+                                />
+                                <Button
+                                    onClick={handleCommentSubmit}
+                                    disabled={!commentText.trim() || sendingComment}
+                                    className="h-11 sm:h-auto bg-[#2d5f4f] text-white sm:w-auto"
+                                >
+                                    등록
+                                </Button>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center gap-3 mb-8 p-6 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                    댓글을 작성하려면 로그인이 필요합니다.
+                                </p>
+                                <Button
+                                    onClick={() => navigate('/login')}
+                                    className="bg-[#2d5f4f] text-white hover:bg-[#234a3d]"
+                                >
+                                    로그인하기
+                                </Button>
+                            </div>
+                        )}
+
+                        {/* Comment List */}
+                        {commentsError ? (
+                            <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 text-sm text-gray-600 dark:text-gray-300">
+                                <p>{commentsError}</p>
+                                <Button
+                                    variant="outline"
+                                    className="mt-3"
+                                    onClick={() => parsedPostId && loadComments(parsedPostId)}
+                                    disabled={!parsedPostId}
+                                >
+                                    다시 시도
+                                </Button>
+                            </div>
+                        ) : commentsLoading ? (
+                            <div className="space-y-4">
+                                {[1, 2, 3].map((item) => (
+                                    <div key={item} className="flex gap-4 animate-pulse">
+                                        <div className="h-10 w-10 rounded-full bg-gray-200 dark:bg-gray-700" />
+                                        <div className="flex-1 space-y-2">
+                                            <div className="h-3 w-24 rounded bg-gray-200 dark:bg-gray-700" />
+                                            <div className="h-4 w-full rounded bg-gray-200 dark:bg-gray-700" />
+                                            <div className="h-4 w-5/6 rounded bg-gray-200 dark:bg-gray-700" />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : comments.length === 0 ? (
+                            <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                아직 댓글이 없습니다. 첫 댓글을 남겨보세요!
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {comments.map((comment) => (
+                                    <CommentItem
+                                        key={comment.id}
+                                        comment={comment}
+                                        canInteract={Boolean(user)}
+                                        canLike={Boolean(user)}
+                                        repliesEnabled={false}
+                                        repliesComingSoon={true}
+                                        activeReplyId={activeReplyId}
+                                        replyDraft={replyDraft}
+                                        isReplyPending={isReplyPending}
+                                        isCommentLikePending={false}
+                                        commentLikeAnimating={commentLikeAnimating}
+                                        onCommentLike={handleCommentLike}
+                                        onReplyToggle={handleReplyToggle}
+                                        onReplyChange={handleReplyChange}
+                                        onReplySubmit={handleReplySubmit}
+                                        onReplyCancel={handleReplyCancel}
+                                        onDelete={handleCommentDelete}
+                                        userEmail={user?.email}
+                                    />
+                                ))}
+                            </div>
                         )}
                     </div>
-
-                    {/* Post Content */}
-                    <div className="mt-5 text-[15px] sm:text-[16px] text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-6 sm:leading-7 min-h-[100px]">
-                        {selectedPost.content}
-                    </div>
-
-                    {/* Images */}
-                    {selectedPost.images && selectedPost.images.length > 0 && (
-                        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {selectedPost.images.map((img, idx) => (
-                                <div key={idx} className="overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800">
-                                    <img
-                                        src={img}
-                                        alt={`uploaded-${idx}`}
-                                        className="h-full w-full object-cover aspect-[4/3]"
-                                    />
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    {/* Action Buttons */}
-                    <div className="mt-6 flex flex-wrap items-center gap-2 sm:gap-4 py-4 border-t border-b border-gray-100 dark:border-gray-800 text-sm">
-                        <button
-                            onClick={() => toggleLike(selectedPost.id)}
-                            className={cn(
-                                "flex items-center gap-2 px-4 py-2 rounded-full transition-colors",
-                                selectedPost.likedByUser
-                                    ? "bg-red-50 text-red-500"
-                                    : "bg-gray-50 text-gray-600 hover:bg-gray-100"
-                            )}
-                        >
-                            <Heart className={cn("w-5 h-5", selectedPost.likedByUser && "fill-current")} />
-                            <span className="font-semibold">{selectedPost.likes}</span>
-                        </button>
-
-                        <button className="flex items-center gap-2 px-4 py-2 rounded-full bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors">
-                            <MessageSquare className="w-5 h-5" />
-                            <span className="font-semibold">{commentCount}</span>
-                        </button>
-
-                        <button
-                            onClick={() => toggleBookmark(selectedPost.id)}
-                            className={cn(
-                                "flex items-center gap-2 px-4 py-2 rounded-full transition-colors sm:ml-auto",
-                                selectedPost.isBookmarked
-                                    ? "bg-yellow-50 text-yellow-600"
-                                    : "bg-gray-50 text-gray-600 hover:bg-gray-100"
-                            )}
-                        >
-                            <Bookmark className={cn("w-5 h-5", selectedPost.isBookmarked && "fill-current")} />
-                        </button>
-                    </div>
-                </div>
-            </article>
-
-            {/* Comment Section */}
-            <section className="mt-6 rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-[#151A23] shadow-sm">
-                <div className="px-4 sm:px-6 lg:px-8 py-6">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-bold text-[15px] sm:text-[16px]">댓글 {commentCount}개</h3>
-                    </div>
-
-                    {/* Comment Input */}
-                    <div className="flex flex-col sm:flex-row gap-3 mb-8">
-                        <Textarea
-                            value={commentText}
-                            onChange={(e) => setCommentText(e.target.value)}
-                            placeholder={user ? "댓글을 남겨주세요." : "로그인이 필요합니다."}
-                            disabled={!user || sendingComment}
-                            className="min-h-[88px] sm:min-h-[96px] bg-gray-50 dark:bg-gray-900 resize-none"
-                        />
-                        <Button
-                            onClick={handleCommentSubmit}
-                            disabled={!user || !commentText.trim() || sendingComment}
-                            className="h-11 sm:h-auto bg-[#2d5f4f] text-white sm:w-auto"
-                        >
-                            등록
-                        </Button>
-                    </div>
-
-                {/* Comment List */}
-                {commentsError ? (
-                    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 text-sm text-gray-600 dark:text-gray-300">
-                        <p>{commentsError}</p>
-                        <Button
-                            variant="outline"
-                            className="mt-3"
-                            onClick={() => parsedPostId && loadComments(parsedPostId)}
-                            disabled={!parsedPostId}
-                        >
-                            다시 시도
-                        </Button>
-                    </div>
-                ) : commentsLoading ? (
-                    <div className="space-y-4">
-                        {[1, 2, 3].map((item) => (
-                            <div key={item} className="flex gap-4 animate-pulse">
-                                <div className="h-10 w-10 rounded-full bg-gray-200 dark:bg-gray-700" />
-                                <div className="flex-1 space-y-2">
-                                    <div className="h-3 w-24 rounded bg-gray-200 dark:bg-gray-700" />
-                                    <div className="h-4 w-full rounded bg-gray-200 dark:bg-gray-700" />
-                                    <div className="h-4 w-5/6 rounded bg-gray-200 dark:bg-gray-700" />
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                ) : comments.length === 0 ? (
-                    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                        아직 댓글이 없습니다. 첫 댓글을 남겨보세요!
-                    </div>
-                ) : (
-                    <div className="space-y-4">
-                        {comments.map((comment) => (
-                            <CommentItem
-                                key={comment.id}
-                                comment={comment}
-                                canInteract={Boolean(user)}
-                                canLike={Boolean(user)}
-                                repliesEnabled={false}
-                                activeReplyId={activeReplyId}
-                                replyDraft={replyDraft}
-                                isReplyPending={isReplyPending}
-                                isCommentLikePending={false}
-                                commentLikeAnimating={commentLikeAnimating}
-                                onCommentLike={handleCommentLike}
-                                onReplyToggle={handleReplyToggle}
-                                onReplyChange={handleReplyChange}
-                                onReplySubmit={handleReplySubmit}
-                                onReplyCancel={handleReplyCancel}
-                                onDelete={handleCommentDelete}
-                                userEmail={user?.email}
-                            />
-                        ))}
-                    </div>
-                )}
-                </div>
-            </section>
-            <UserProfileModal
-                userId={viewingUserId}
-                isOpen={isProfileModalOpen}
-                onClose={() => setIsProfileModalOpen(false)}
-            />
-        </div>
+                </section>
+                <UserProfileModal
+                    userId={viewingUserId}
+                    isOpen={isProfileModalOpen}
+                    onClose={() => setIsProfileModalOpen(false)}
+                />
+                <ReportModal
+                    postId={parsedPostId}
+                    isOpen={isReportModalOpen}
+                    onClose={() => setIsReportModalOpen(false)}
+                />
+                <QuoteRepostEditor
+                    isOpen={isQuoteEditorOpen}
+                    onClose={() => setIsQuoteEditorOpen(false)}
+                    post={selectedPost}
+                />
+            </div>
         </div>
     );
 }

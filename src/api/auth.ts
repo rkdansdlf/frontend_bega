@@ -18,11 +18,13 @@ export interface LoginResponse {
     id: number;
     name: string;
     role: string;
+    handle?: string;
   };
 }
 
 export interface SignUpRequest {
   name: string;
+  handle: string;
   email: string;
   password: string;
   confirmPassword: string;

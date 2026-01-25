@@ -1,19 +1,23 @@
 export interface UserProfile {
   id: number;
   name: string;
+  handle?: string;
   email: string;
   favoriteTeam: string | null;
   profileImageUrl: string | null;
   role?: string;
   bio?: string | null;
+  cheerPoints?: number;
 }
 
 export interface PublicUserProfile {
   id: number;
   name: string;
+  handle: string;
   favoriteTeam: string | null;
   profileImageUrl: string | null;
   bio?: string | null;
+  cheerPoints?: number;
 }
 
 export interface UserProfileApiResponse {
