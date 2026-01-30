@@ -8,6 +8,7 @@ export const useCheerWrite = (favoriteTeam: string | null) => {
     // const { createPost } = useCheerStore(); // Removed
     const { createPostMutation } = useCheerMutations(); // Added
 
+    // const [title, setTitle] = useState(''); // Removed title state
     const [content, setContent] = useState('');
     const [newFiles, setNewFiles] = useState<File[]>([]);
     const [newFilePreviews, setNewFilePreviews] = useState<{ file: File; url: string }[]>([]);
@@ -102,6 +103,8 @@ export const useCheerWrite = (favoriteTeam: string | null) => {
     };
 
     return {
+        // title, // Removed
+        // setTitle, // Removed
         content,
         setContent,
         newFilePreviews,

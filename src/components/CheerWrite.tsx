@@ -20,6 +20,8 @@ export default function CheerWrite() {
   const favoriteTeam = useAuthStore((state) => state.user?.favoriteTeam) ?? null;
 
   const {
+    // title, // Removed
+    // setTitle, // Removed
     content,
     setContent,
     newFilePreviews,
@@ -72,6 +74,8 @@ export default function CheerWrite() {
 
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="space-y-6">
+          {/* Title Input Removed */}
+
           {/* Content */}
           <div className="space-y-2">
             <label className="block text-sm" style={{ color: '#2d5f4f' }}>
@@ -179,6 +183,6 @@ export default function CheerWrite() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </div >
   );
 }

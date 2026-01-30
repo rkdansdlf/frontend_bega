@@ -1,51 +1,44 @@
-import { ChatRequest, EdgeFunctionRequest, ChatResponse, VoiceResponse } from '../types/chatbot';
-import Cookies from 'js-cookie';
-
-const API_URL = import.meta.env.VITE_AI_API_URL || '/ai';
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://zyofzvnkputevakepbdm.supabase.co';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1`;
-
-/**
- * Edge Function으로 채팅 메시지 전송
- */
-export async function sendChatMessageToEdge(data: EdgeFunctionRequest): Promise<ChatResponse> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-
-  // 인증 헤더 추가
-  const authToken = Cookies.get('Authorization');
-
-  if (authToken) {
-    headers['Authorization'] = `Bearer ${authToken}`;
-  } else if (SUPABASE_ANON_KEY) {
-    headers['Authorization'] = `Bearer ${SUPABASE_ANON_KEY}`;
-  } else {
-    throw new Error('Supabase anon key가 설정되지 않았습니다.');
-  }
-
-  const response = await fetch(`${EDGE_FUNCTION_URL}/ai-chat`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-  }
-
-  const result: ChatResponse = await response.json();
-
-  if (result.error) {
-    throw new Error(result.error);
-  }
-
-  return result;
-}
-
+import { ChatRequest, VoiceResponse } from '../types/chatbot';
+import { getMockRateLimitSeconds } from '../mock/chatbotRateLimitMock';
+const RAW_AI_API_URL = import.meta.env.VITE_AI_API_URL;
+const API_BASE = RAW_AI_API_URL ? RAW_AI_API_URL.replace(/\/+$/, '') : '';
+const buildAiUrl = (path: string) => {
+  if (!API_BASE) return `/ai${path}`;
+  if (API_BASE.endsWith('/ai')) return `${API_BASE}${path}`;
+  return `${API_BASE}/ai${path}`;
+};
 /**
  * FastAPI SSE 스트리밍 처리
  */
+export class RateLimitError extends Error {
+  retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number) {
+    super('STATUS_429');
+    this.name = 'RateLimitError';
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+const DEFAULT_RETRY_AFTER_SECONDS = 10;
+
+const parseRetryAfterSeconds = (retryAfterHeader: string | null): number | null => {
+  if (!retryAfterHeader) return null;
+
+  const numericValue = Number(retryAfterHeader);
+  if (!Number.isNaN(numericValue) && Number.isFinite(numericValue)) {
+    return Math.max(0, Math.floor(numericValue));
+  }
+
+  const parsedDate = Date.parse(retryAfterHeader);
+  if (!Number.isNaN(parsedDate)) {
+    const diffMs = parsedDate - Date.now();
+    return Math.max(0, Math.ceil(diffMs / 1000));
+  }
+
+  return null;
+};
+
 export async function sendChatMessageStream(
   data: ChatRequest,
   onDelta: (delta: string) => void,
@@ -58,6 +51,12 @@ export async function sendChatMessageStream(
 ): Promise<void> {
   const MAX_RETRIES = 3;
   const READ_TIMEOUT_MS = 30000; // 30 seconds
+  const mockMode = import.meta.env.VITE_MOCK_CHATBOT_RATE_LIMIT;
+  const mockSeconds = getMockRateLimitSeconds(mockMode);
+
+  if (mockSeconds !== null) {
+    throw new RateLimitError(mockSeconds);
+  }
 
   let attempt = 0;
   let response: Response | null = null;
@@ -65,7 +64,7 @@ export async function sendChatMessageStream(
   while (attempt < MAX_RETRIES) {
     try {
       attempt++;
-      response = await fetch(`${API_URL}/chat/stream`, {
+      response = await fetch(buildAiUrl('/chat/stream'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -76,15 +75,20 @@ export async function sendChatMessageStream(
         break; // Success
       }
 
-      // Handle 4xx errors (do not retry unless it's 429)
-      if (response.status !== 429 && response.status !== 503 && response.status >= 400 && response.status < 500) {
+      if (response.status === 429) {
+        const retryAfterHeader = response.headers.get('Retry-After');
+        const retryAfterSeconds = parseRetryAfterSeconds(retryAfterHeader) ?? DEFAULT_RETRY_AFTER_SECONDS;
+        throw new RateLimitError(retryAfterSeconds);
+      }
+
+      // Handle 4xx errors (do not retry unless it's 503)
+      if (response.status !== 503 && response.status >= 400 && response.status < 500) {
         const errorText = await response.text();
         throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
       }
 
-      // If 5xx or 429, retry
+      // If 5xx or 503, retry
       if (attempt >= MAX_RETRIES) {
-        if (response.status === 429) throw new Error('STATUS_429');
         if (response.status === 503) throw new Error('STATUS_503');
         const errorText = await response.text();
         throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
@@ -95,6 +99,10 @@ export async function sendChatMessageStream(
       await new Promise(resolve => setTimeout(resolve, delay));
 
     } catch (error) {
+      if (error instanceof RateLimitError) {
+        throw error;
+      }
+
       // Network errors or other fetch exceptions
       if (attempt >= MAX_RETRIES) {
         throw error;
@@ -213,7 +221,7 @@ export async function convertVoiceToText(audioBlob: Blob): Promise<string> {
   const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
-    const response = await fetch(`${API_URL}/chat/voice`, {
+    const response = await fetch(buildAiUrl('/chat/voice'), {
       method: 'POST',
       body: formData,
       signal: controller.signal,

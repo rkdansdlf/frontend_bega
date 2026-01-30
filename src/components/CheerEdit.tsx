@@ -19,6 +19,8 @@ export default function CheerEdit() {
     isLoading,
     isError,
     hasAccess,
+    // title, // Removed
+    // setTitle, // Removed
     content,
     setContent,
     existingImages,
@@ -135,6 +137,10 @@ export default function CheerEdit() {
             ) : (
               /* Edit Form */
               <div className="space-y-6">
+                <div className="space-y-2">
+                  {/* Title Input Removed */}
+                </div>
+
                 {/* Content */}
                 <div className="space-y-2">
                   <label className="block text-sm" style={{ color: '#2d5f4f' }}>

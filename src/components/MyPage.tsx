@@ -9,8 +9,15 @@ import AccountSettingsSection from './mypage/AccountSettingsSection';
 import DiaryViewSection from './mypage/Diaryform';
 import DiaryStatistics from './mypage/Diarystatistics';
 import MateHistorySection from './mypage/MateHistorySection';
+import BlockedUsersSection from './mypage/BlockedUsersSection';
 import { useMyPage } from '../hooks/useMyPage';
+
 import { useMediaQuery } from '../hooks/useMediaQuery';
+import { useQuery } from '@tanstack/react-query';
+import { getFollowCounts } from '../api/followApi';
+import { useState } from 'react';
+import UserListModal from './profile/UserListModal';
+import { UserPlus } from 'lucide-react';
 
 export default function MyPage() {
   const {
@@ -25,8 +32,33 @@ export default function MyPage() {
     viewMode,
     setViewMode,
     handleProfileUpdated,
+
     handleToggleStats,
   } = useMyPage();
+
+  const [userListModal, setUserListModal] = useState<{
+    isOpen: boolean;
+    type: 'followers' | 'following';
+    title: string;
+  }>({
+    isOpen: false,
+    type: 'followers',
+    title: '',
+  });
+
+  // 팔로워/팔로잉 카운트 조회
+  const { data: followCounts } = useQuery({
+    queryKey: ['followCounts', user?.id],
+    queryFn: () => getFollowCounts(Number(user!.id)),
+    enabled: !!user?.id,
+  });
+
+  const formatCount = (count: number): string => {
+    if (count >= 1000) {
+      return `${(count / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+    }
+    return count.toString();
+  };
 
   const isDesktop = useMediaQuery('(min-width: 768px)');
 
@@ -81,6 +113,37 @@ export default function MyPage() {
               </div>
             </div>
 
+            {/* 팔로워/팔로잉 카운트 (데스크탑: 우측, 모바일: 아래) */}
+            <div className={`flex items-center gap-6 ${isDesktop ? 'mr-auto ml-12' : 'mt-4 justify-start'}`}>
+              <button
+                className="text-center group cursor-pointer"
+                onClick={() => setUserListModal({ isOpen: true, type: 'followers', title: '팔로워' })}
+              >
+                <span className="font-bold text-lg text-gray-900 dark:text-white block group-hover:text-[#2d5f4f] transition-colors">
+                  {formatCount(followCounts?.followerCount || 0)}
+                </span>
+                <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1 group-hover:text-[#2d5f4f] transition-colors">
+                  <Users className="w-3.5 h-3.5" />
+                  팔로워
+                </span>
+              </button>
+              <div className="h-8 w-px bg-gray-200 dark:bg-gray-700"></div>
+              <button
+                className="text-center group cursor-pointer"
+                onClick={() => setUserListModal({ isOpen: true, type: 'following', title: '팔로잉' })}
+              >
+                <span className="font-bold text-lg text-gray-900 dark:text-white block group-hover:text-[#2d5f4f] transition-colors">
+                  {formatCount(followCounts?.followingCount || 0)}
+                </span>
+                <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1 group-hover:text-[#2d5f4f] transition-colors">
+                  <UserPlus className="w-3.5 h-3.5" />
+                  팔로잉
+                </span>
+              </button>
+            </div>
+
+
+
             {/* 버튼들 */}
             <div className={`${isDesktop ? 'flex items-center gap-3' : 'grid grid-cols-2 gap-3'}`}>
 
@@ -127,10 +190,12 @@ export default function MyPage() {
               userRole={user?.role}
               userProvider={user?.provider}
               initialBio={user?.bio}
+              hasPassword={user?.hasPassword}
               onCancel={() => setViewMode('diary')}
               onSave={handleProfileUpdated}
               onChangePassword={() => setViewMode('changePassword')}
               onAccountSettings={() => setViewMode('accountSettings')}
+              onBlockedUsers={() => setViewMode('blockedUsers')}
             />
           )
         }
@@ -140,6 +205,7 @@ export default function MyPage() {
             <PasswordChangeSection
               onCancel={() => setViewMode('editProfile')}
               onSuccess={() => setViewMode('diary')}
+              hasPassword={user?.hasPassword}
             />
           )
         }
@@ -158,9 +224,35 @@ export default function MyPage() {
             />
           )
         }
+
+        {
+          viewMode === 'blockedUsers' && (
+            <div className="max-w-3xl mx-auto">
+              <BlockedUsersSection />
+              <div className="mt-4 flex justify-end">
+                <Button variant="outline" onClick={() => setViewMode('editProfile')}>
+                  돌아가기
+                </Button>
+              </div>
+            </div>
+          )
+        }
       </div >
 
       <ChatBot />
+
+      {/* User List Modal */}
+      {
+        user && (
+          <UserListModal
+            isOpen={userListModal.isOpen}
+            onClose={() => setUserListModal(prev => ({ ...prev, isOpen: false }))}
+            userId={Number(user.id)}
+            type={userListModal.type}
+            title={userListModal.title}
+          />
+        )
+      }
     </div >
   );
 }

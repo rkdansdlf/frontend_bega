@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { useAuthStore } from './store/authStore';
 import Layout from './components/Layout';
 import ChatBot from './components/ChatBot';
+import ScrollToTop from './components/ScrollToTop';
 import { LoginRequiredDialog } from './components/LoginRequiredDialog';
 import { ErrorModalProvider } from './components/contexts/ErrorModalContext';
 import GlobalErrorDialog from './components/GlobalErrorDialog';
@@ -40,6 +41,7 @@ const TermsOfService = lazy(() => import('./components/TermsOfService'));
 const PrivacyPolicy = lazy(() => import('./components/PrivacyPolicy'));
 const OAuthCallback = lazy(() => import('./components/OAuthCallback'));
 const TestError = lazy(() => import('./components/TestError')); // Test Purpose Only
+const LeaderboardPage = lazy(() => import('./pages/LeaderboardPage'));
 
 function ProtectedRoute() {
   const { isLoggedIn, showLoginRequiredDialog, setShowLoginRequiredDialog } = useAuthStore();
@@ -114,6 +116,7 @@ export default function App() {
   return (
     <ErrorModalProvider>
       <BrowserRouter>
+        <ScrollToTop />
         <Suspense fallback={<LoadingSpinner />}>
           <Routes>
             {/* 공개 라우트 - 로그인 필요 없음 */}
@@ -138,6 +141,7 @@ export default function App() {
               <Route path="/notice" element={<NoticePage />} />
               <Route path="/terms" element={<TermsOfService />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/leaderboard" element={<LeaderboardPage />} />
               {/* 로그인 필요한 라우트 */}
               <Route element={<ProtectedRoute />}>
                 <Route path="/mate/:id" element={<MateDetail />} />

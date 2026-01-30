@@ -379,9 +379,11 @@ export async function cancelRepost(repostId: number): Promise<RepostToggleRespon
     return response.data;
 }
 
-// 인용 리포스트 생성
-export async function createQuoteRepost(postId: number, content: string): Promise<CheerPost> {
-    const response = await api.post(`/cheer/posts/${postId}/quote`, { content });
+// 인용 리포스트
+export async function createQuoteRepost(postId: number, content: string) {
+    const response = await api.post(`/cheer/posts/${postId}/repost`, {
+        content
+    });
     return transformPost(response.data);
 }
 

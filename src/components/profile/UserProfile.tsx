@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { fetchPublicUserProfileByHandle } from '../../api/profile';
 import { fetchUserPostsByHandle } from '../../api/cheerApi';
 import { getFollowCounts } from '../../api/followApi';
@@ -26,11 +26,22 @@ import CheerCard from '../CheerCard';
 import EndOfFeed from '../EndOfFeed';
 import FollowButton from './FollowButton';
 import { useAuthStore } from '../../store/authStore';
+import UserListModal from './UserListModal';
 
 export default function UserProfile() {
     const { handle } = useParams<{ handle: string }>();
     const navigate = useNavigate();
     const currentUser = useAuthStore((state) => state.user);
+
+    const [userListModal, setUserListModal] = useState<{
+        isOpen: boolean;
+        type: 'followers' | 'following';
+        title: string;
+    }>({
+        isOpen: false,
+        type: 'followers',
+        title: '',
+    });
 
     // URL에 @가 없는 경우 붙여줌 (UX)
     const normalizedHandle = handle?.startsWith('@') ? handle : `@${handle}`;
@@ -43,6 +54,7 @@ export default function UserProfile() {
         queryKey: ['publicProfile', normalizedHandle],
         queryFn: () => fetchPublicUserProfileByHandle(normalizedHandle),
         enabled: !!normalizedHandle,
+        retry: 0,
     });
 
     // 팔로워/팔로잉 카운트 조회
@@ -62,7 +74,7 @@ export default function UserProfile() {
         queryKey: ['userPosts', normalizedHandle],
         queryFn: ({ pageParam = 0 }) => fetchUserPostsByHandle(normalizedHandle, pageParam),
         getNextPageParam: (lastPage) => (lastPage.last ? undefined : lastPage.number + 1),
-        enabled: !!normalizedHandle,
+        enabled: !!profile?.id, // Only fetch posts if user exists
         initialPageParam: 0,
     });
 
@@ -200,65 +212,74 @@ export default function UserProfile() {
                         )}
                     </div>
 
-                    {/* Statistics Row */}
-                    <div className="flex items-center gap-6 py-4 border-y border-gray-100 dark:border-gray-700">
-                        <div className="text-center">
-                            <span className="font-bold text-lg text-gray-900 dark:text-white block">
-                                {formatCount(totalPosts)}
-                            </span>
-                            <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center justify-center gap-1">
-                                <FileText className="w-3.5 h-3.5" />
-                                게시글
-                            </span>
-                        </div>
-                        <div className="text-center">
-                            <span className="font-bold text-lg text-gray-900 dark:text-white block">
-                                {formatCount(followCounts?.followerCount || 0)}
-                            </span>
-                            <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center justify-center gap-1">
-                                <Users className="w-3.5 h-3.5" />
-                                팔로워
-                            </span>
-                        </div>
-                        <div className="text-center">
-                            <span className="font-bold text-lg text-gray-900 dark:text-white block">
-                                {formatCount(followCounts?.followingCount || 0)}
-                            </span>
-                            <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center justify-center gap-1">
-                                <UserPlus className="w-3.5 h-3.5" />
-                                팔로잉
-                            </span>
-                        </div>
+                </div>
+
+                {/* Statistics Row */}
+                <div className="flex items-center justify-around py-4 border-y border-gray-100 dark:border-gray-700">
+                    <div className="text-center">
+                        <span className="font-bold text-lg text-gray-900 dark:text-white block">
+                            {formatCount(totalPosts)}
+                        </span>
+                        <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center justify-center gap-1">
+                            <FileText className="w-3.5 h-3.5" />
+                            게시글
+                        </span>
                     </div>
+                    <button
+                        className="text-center hover:bg-gray-50 dark:hover:bg-gray-700/50 p-1 rounded-lg transition-colors cursor-pointer"
+                        onClick={() => setUserListModal({ isOpen: true, type: 'followers', title: '팔로워' })}
+                    >
+                        <span className="font-bold text-lg text-gray-900 dark:text-white block">
+                            {formatCount(followCounts?.followerCount || 0)}
+                        </span>
+                        <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center justify-center gap-1">
+                            <Users className="w-3.5 h-3.5" />
+                            팔로워
+                        </span>
+                    </button>
+                    <button
+                        className="text-center hover:bg-gray-50 dark:hover:bg-gray-700/50 p-1 rounded-lg transition-colors cursor-pointer"
+                        onClick={() => setUserListModal({ isOpen: true, type: 'following', title: '팔로잉' })}
+                    >
+                        <span className="font-bold text-lg text-gray-900 dark:text-white block">
+                            {formatCount(followCounts?.followingCount || 0)}
+                        </span>
+                        <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center justify-center gap-1">
+                            <UserPlus className="w-3.5 h-3.5" />
+                            팔로잉
+                        </span>
+                    </button>
+                </div>
 
-                    {/* Action Buttons */}
-                    {!isOwnProfile && currentUser && (
-                        <div className="flex gap-3 mt-4">
-                            <FollowButton
-                                userId={profile.id}
-                                size="default"
-                                showNotifyOption={true}
-                                className="flex-1"
-                                style={{
-                                    backgroundColor: theme.primary,
-                                    color: theme.contrastText,
-                                }}
-                            />
-                            <Button
-                                variant="outline"
-                                className="flex-1"
-                                onClick={() => {
-                                    // TODO: 메시지 기능 구현 시 연결
-                                }}
-                            >
-                                <MessageCircle className="w-4 h-4 mr-2" />
-                                메시지
-                            </Button>
-                        </div>
-                    )}
+                {/* Action Buttons */}
+                {!isOwnProfile && currentUser && (
+                    <div className="flex gap-3 mt-4 px-6 mb-6">
+                        <FollowButton
+                            userId={profile.id}
+                            size="default"
+                            showNotifyOption={true}
+                            className="flex-1"
+                            style={{
+                                backgroundColor: theme.primary,
+                                color: theme.contrastText,
+                            }}
+                        />
+                        <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => {
+                                // TODO: 메시지 기능 구현 시 연결
+                            }}
+                        >
+                            <MessageCircle className="w-4 h-4 mr-2" />
+                            메시지
+                        </Button>
+                    </div>
+                )}
 
-                    {/* Bio Section */}
-                    <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl relative">
+                {/* Bio Section */}
+                <div className="px-6 mb-6">
+                    <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl relative">
                         <Quote className="absolute top-3 left-3 w-4 h-4 text-gray-300 dark:text-gray-600" />
                         <div className="pl-6">
                             {profile.bio ? (
@@ -315,6 +336,17 @@ export default function UserProfile() {
                     </div>
                 )}
             </div>
+
+            {/* User List Modal */}
+            {profile && (
+                <UserListModal
+                    isOpen={userListModal.isOpen}
+                    onClose={() => setUserListModal(prev => ({ ...prev, isOpen: false }))}
+                    userId={profile.id}
+                    type={userListModal.type}
+                    title={userListModal.title}
+                />
+            )}
         </div>
     );
 }

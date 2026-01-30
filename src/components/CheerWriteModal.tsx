@@ -142,7 +142,7 @@ export default function CheerWriteModal({
                                 </span>
                             )}
                         </div>
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0 flex flex-col gap-2">
                             <TextareaAutosize
                                 autoFocus
                                 placeholder="지금 우리 팀에게 응원을 남겨주세요!"
